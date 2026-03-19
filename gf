@@ -157,21 +157,32 @@ find_war_file() {
     echo "$war"
 }
 
-# Auto-detect the deployed app name from the applications directory.
-# Skips GlassFish internal apps (__internal, ejb-timer-service-app).
+# Auto-detect the deployed app name.
+# Step 1: scan the exploded applications directory (skips GlassFish internals).
+# Step 2 (fallback): query asadmin for domain.xml-only ("ghost") registrations.
 find_app_name() {
     local app_dir="$GF_DOMAIN_DIR/applications"
-    if [[ ! -d "$app_dir" ]]; then
-        return 1
+    if [[ -d "$app_dir" ]]; then
+        for dir in "$app_dir"/*/; do
+            local name
+            name="$(basename "$dir")"
+            if [[ "$name" != "__internal" && "$name" != "ejb-timer-service-app" ]]; then
+                echo "$name"
+                return 0
+            fi
+        done
     fi
-    for dir in "$app_dir"/*/; do
-        local name
-        name="$(basename "$dir")"
-        if [[ "$name" != "__internal" && "$name" != "ejb-timer-service-app" ]]; then
-            echo "$name"
-            return 0
-        fi
-    done
+
+    # Fallback: ask GlassFish directly (handles domain.xml-only registrations)
+    local app
+    app=$("$ASADMIN" list-applications 2>/dev/null \
+        | grep -v -E '^(Command|Nothing|$)' \
+        | awk '{print $1}' | head -1)
+    if [[ -n "$app" ]]; then
+        echo "$app"
+        return 0
+    fi
+
     return 1
 }
 
