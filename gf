@@ -409,6 +409,8 @@ cmd_classes() {
         local version_args=""
         if [[ -n "$java_version" ]]; then
             version_args="--source $java_version --target $java_version"
+        else
+            warn "Could not detect Java version from pom.xml (set maven.compiler.release or maven.compiler.source). Falling back to system default."
         fi
 
         timestamp=$(now_ms)
