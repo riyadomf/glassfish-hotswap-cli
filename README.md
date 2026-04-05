@@ -7,7 +7,7 @@ A CLI tool for local GlassFish development. Handles server lifecycle, incrementa
 - **Claude Code integration** — Claude Code can use `./gf` commands autonomously, or invoke the `/gf` skill to manage the server from within the conversation
 - **Hot-reload for Jasper reports** (.jrxml) — `./gf ui` syncs JasperReports templates to the running server; IntelliJ's "Update resources" only covers webapp files (XHTML/CSS/JS)
 - **Incremental compile** — only recompiles changed `.java` files (~3-6s), vs IntelliJ's full project build
-- **Automatic fallback** — if JDWP hot-swap fails (structural change), auto-falls back to a full redeploy instead of just showing an error
+- **Automatic fallback** — if JDWP hot-swap fails (structural change), auto-falls back to a full redeploy. If an IDE debugger is already attached, skips the redeploy and prompts you to hot-swap from the IDE
 - **Self-healing** — auto-fixes broken JDWP debug-options in `domain.xml` before startup
 - **IDE-independent** — works from any terminal (VS Code, Vim, SSH), not tied to IntelliJ
 
@@ -119,7 +119,8 @@ The WAR file is auto-detected from `target/*.war` after each build. The Java ver
 1. `find` detects `.java` files modified since the last successful compile
 2. `javac` compiles only those files (with Lombok annotation processing, if Lombok is on the classpath)
 3. `HotSwap.java` connects to the running JVM via JDWP (port 9009) and redefines the changed classes in-place
-4. If hot-swap fails (structural change), falls back to full Maven build + asadmin redeploy
+4. If an IDE debugger is already attached (port occupied), skips redeploy and prompts to hot-swap from the IDE
+5. If hot-swap fails (structural change), falls back to full Maven build + asadmin redeploy
 
 ### File Sync
 
@@ -143,7 +144,9 @@ tools/
 2. Set **Port** to `9009`, leave other defaults (Attach, Socket, localhost)
 3. Click **Debug** — IntelliJ connects to the running GlassFish instance
 
-You can now set breakpoints, inspect variables, and step through code. Hot-swap via `./gf classes` uses this same JDWP connection.
+You can now set breakpoints, inspect variables, and step through code.
+
+> **Note:** JDWP only allows one debugger connection at a time. When IntelliJ is attached, `./gf classes` will compile your changes but skip the JDWP hot-swap step — use IntelliJ's **Run → Reload Changed Classes** (Ctrl+F10) instead. Disconnect IntelliJ's debugger to let `./gf classes` handle hot-swap directly.
 
 ## Claude Code Integration
 
@@ -166,7 +169,7 @@ Any arguments after `/gf` are passed straight to the `./gf` script. With no argu
 
 **XHTML changes not visible** — Mojarra 4.1.6+ sets `FACELETS_REFRESH_PERIOD=-1` when `PROJECT_STAGE=Production`. Ensure your JSF project stage is set to `Development` (e.g., via a context parameter in `web.xml` or a Maven profile). If pages are still stale, try `./gf full`.
 
-**Debug port not reachable** — Make sure you started with `./gf start` (debug mode is on by default, port 9009). Use `./gf start --no-debug` only if you don't need hot-swap.
+**Debug port not reachable** — Either an IDE debugger is already attached (JDWP allows only one connection), or GlassFish wasn't started in debug mode. If an IDE debugger is connected, `./gf classes` will compile and prompt you to hot-swap from the IDE. Otherwise, restart with `./gf start` (debug is on by default).
 
 **Classpath cache stale** — If you changed `pom.xml` dependencies, the cache auto-refreshes on next `./gf classes`. To force: delete `tools/.classpath.cache`.
 

@@ -468,7 +468,11 @@ cmd_classes() {
     if [[ "$verbose" == true ]]; then verbose_flag="-v"; fi
     java -cp "$PROJECT_DIR/tools" HotSwap "$DEBUG_PORT" "$CLASSES_DIR" "${timestamp:-0}" $verbose_flag || swap_rc=$?
 
-    if [[ $swap_rc -ne 0 ]]; then
+    if [[ $swap_rc -eq 2 ]]; then
+        # Connection failure — IDE debugger likely holds the JDWP port
+        warn "Could not connect to debug port ${DEBUG_PORT} (IDE debugger attached?)."
+        success "Classes compiled. Use your IDE to hot-swap."
+    elif [[ $swap_rc -ne 0 ]]; then
         warn "JDWP hot swap failed (structural change?). Falling back to full redeploy..."
         local fb_start
         fb_start=$(now_ms)

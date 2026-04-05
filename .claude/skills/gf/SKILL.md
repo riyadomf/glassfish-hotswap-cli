@@ -67,7 +67,8 @@ If no arguments were provided, show the quick reference below instead of running
        1. find -newer → changed .java files
        2. javac (incremental, Lombok processorpath)
        3. HotSwap.java → JDWP redefineClasses on port 9009
-       4. Fallback: mvnw package + asadmin redeploy
+       4. If IDE debugger attached → compile only, skip redeploy
+       5. If structural change → fallback: mvnw package + asadmin redeploy
 ```
 
 ## Key Files

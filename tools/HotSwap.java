@@ -191,9 +191,9 @@ public class HotSwap {
         try {
             return connector.attach(arguments);
         } catch (ConnectException e) {
-            System.err.println("Cannot connect to debug port " + port + ". Is GlassFish running in debug mode?");
-            System.err.println("Start with: ./gf start   (debug is on by default)");
-            System.exit(1);
+            System.err.println("Cannot connect to debug port " + port + ".");
+            System.err.println("  Possible causes: IDE debugger already connected, or GlassFish not in debug mode.");
+            System.exit(2); // exit 2 = connection failure (distinct from exit 1 = structural change)
             return null; // unreachable
         }
     }
