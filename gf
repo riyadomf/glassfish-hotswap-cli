@@ -226,20 +226,24 @@ require_deployed() {
 
 sync_ui_files() {
     local exploded="$1"
-    rsync -a --delete \
+    local rsync_out
+    rsync_out=$(rsync -a --delete \
         --include='*.xhtml' --include='*.css' --include='*.js' \
         --include='*.html' --include='*.png' --include='*.jpg' \
         --include='*.gif' --include='*.svg' --include='*.ico' \
         --include='*/' --exclude='*' \
-        "$WEBAPP_SRC/" "$exploded/" >/dev/null 2>&1
+        "$WEBAPP_SRC/" "$exploded/" 2>&1) || warn "UI file sync issue: ${rsync_out}"
 }
 
 sync_resource_files() {
     local exploded="$1"
-    rsync -a --delete \
+    local reports_dir="$PROJECT_DIR/src/main/resources/reports"
+    [[ -d "$reports_dir" ]] || return 0
+    local rsync_out
+    rsync_out=$(rsync -a --delete \
         --include='*.jrxml' \
         --include='*/' --exclude='*' \
-        "$PROJECT_DIR/src/main/resources/reports/" "$exploded/WEB-INF/classes/reports/" >/dev/null 2>&1
+        "$reports_dir/" "$exploded/WEB-INF/classes/reports/" 2>&1) || warn "Report sync issue: ${rsync_out}"
 }
 
 # ─── Commands ─────────────────────────────────────────────────────────────────
