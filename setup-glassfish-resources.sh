@@ -163,7 +163,7 @@ else
 fi
 
 echo "Pinging connection pool..."
-$ASADMIN ping-connection-pool "$JDBC_POOL"
+$ASADMIN ping-connection-pool "$JDBC_POOL" || echo "WARNING: Ping failed. Ensure the PostgreSQL driver JAR is in glassfish/lib/ and the database is running."
 
 # ─── Create JMS resources (uncomment if needed) ──────────────────────────────
 
