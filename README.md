@@ -21,6 +21,12 @@ curl -fsSL https://raw.githubusercontent.com/riyadomf/glassfish-hotswap-cli/main
 mkdir -p tools
 curl -fsSL https://raw.githubusercontent.com/riyadomf/glassfish-hotswap-cli/main/tools/HotSwap.java -o tools/HotSwap.java
 chmod +x gf
+
+# Optional: resource setup script (JDBC, JMS, JNDI config)
+curl -fsSL https://raw.githubusercontent.com/riyadomf/glassfish-hotswap-cli/main/setup-glassfish-resources.sh -o setup-glassfish-resources.sh
+curl -fsSL https://raw.githubusercontent.com/riyadomf/glassfish-hotswap-cli/main/db.properties.sample -o db.properties.sample
+curl -fsSL https://raw.githubusercontent.com/riyadomf/glassfish-hotswap-cli/main/env.properties.sample -o env.properties.sample
+chmod +x setup-glassfish-resources.sh
 ```
 
 **Option 2: Clone and copy**
@@ -129,11 +135,14 @@ The WAR file is auto-detected from `target/*.war` after each build. The Java ver
 ## Files
 
 ```
-gf                      ← main CLI script (project root)
+gf                              ← main CLI script (project root)
+setup-glassfish-resources.sh    ← JDBC/JMS/JNDI resource setup (optional)
+db.properties.sample            ← sample database config
+env.properties.sample           ← sample application config
 tools/
-  HotSwap.java          ← JDWP hot-swap utility (tracked)
-  HotSwap.class          ← compiled on first use (gitignored)
-  .classpath.cache       ← Maven dependency cache (gitignored)
+  HotSwap.java                  ← JDWP hot-swap utility (tracked)
+  HotSwap.class                  ← compiled on first use (gitignored)
+  .classpath.cache               ← Maven dependency cache (gitignored)
 ```
 
 ## Debugging with IntelliJ IDEA
@@ -160,6 +169,29 @@ The `/gf` skill lets you run `./gf` commands directly from within Claude Code:
 ```
 
 Any arguments after `/gf` are passed straight to the `./gf` script. With no arguments, it prints a quick reference of all available commands. Copy the `.claude/skills/gf/` directory into your project to enable the skill.
+
+## Resource Setup (Optional)
+
+The `setup-glassfish-resources.sh` script creates JDBC connection pools, JNDI custom resources, and optionally JMS resources in GlassFish. It's idempotent — safe to run multiple times without "already exists" errors.
+
+```bash
+# 1. Configure the script: edit variables at the top of setup-glassfish-resources.sh
+#    (JDBC pool name, datasource name, JNDI prefix, driver class, etc.)
+
+# 2. Create your properties files from the samples:
+cp db.properties.sample db.properties
+cp env.properties.sample env.properties
+# Edit both files with your actual values, then secure them:
+chmod 600 db.properties env.properties
+
+# 3. Run the setup (GlassFish must be running):
+./setup-glassfish-resources.sh db.properties env.properties
+
+# To tear down and recreate all resources:
+./setup-glassfish-resources.sh db.properties env.properties --delete
+```
+
+Each key in `env.properties` becomes a JNDI custom resource under the configured prefix (default: `app/`). Look them up in your application with `@Resource(lookup = "app/your.key")`.
 
 ## Troubleshooting
 

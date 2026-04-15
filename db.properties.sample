@@ -1,0 +1,10 @@
+# Database connection properties
+# Copy to db.properties and fill in your values:
+#   cp db.properties.sample db.properties
+#   chmod 600 db.properties
+
+db.host=localhost
+db.port=5432
+db.name=myapp
+db.user=myapp_user
+db.password=changeme
