@@ -27,6 +27,7 @@ If no arguments were provided, show the quick reference below instead of running
 |---|---|
 | `./gf start [--no-debug]` | Start domain (debug on port 9009 by default) |
 | `./gf stop` | Stop the domain |
+| `./gf setup [--delete]` | Configure JDBC/JMS/JNDI resources from db.properties + env.properties |
 | `./gf run [--no-debug]` | Start + build WAR + deploy (zero to running) |
 | `./gf restart [--no-debug]` | Stop + start + build + deploy |
 

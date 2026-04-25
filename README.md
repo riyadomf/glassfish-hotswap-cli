@@ -74,6 +74,7 @@ The script uses sensible defaults. Override via environment variables if needed:
 | `GF_DOMAIN` | `domain1` | GlassFish domain name |
 | `GF_CONTEXT_ROOT` | `/` | Deployment context root |
 | `GF_DEBUG_PORT` | `9009` | JDWP debug port |
+| `GF_JNDI_PREFIX` | `app` | JNDI namespace prefix for custom resources (must match `setup-glassfish-resources.sh`) |
 
 The WAR file is auto-detected from `target/*.war` after each build. The Java version for incremental compilation is auto-detected from `<maven.compiler.release>` or `<maven.compiler.source>` in your `pom.xml`.
 
@@ -100,6 +101,7 @@ The WAR file is auto-detected from `target/*.war` after each build. The Java ver
 |---|---|
 | `./gf start [--no-debug]` | Start domain (debug on port 9009 by default) |
 | `./gf stop` | Stop the domain |
+| `./gf setup [--delete]` | Configure JDBC/JMS/JNDI resources (auto-detects `db.properties` + `env.properties`) |
 | `./gf run [--no-debug]` | Start + build WAR + deploy (zero to running) |
 | `./gf restart [--no-debug]` | Stop + start + build + deploy |
 
@@ -184,14 +186,21 @@ cp env.properties.sample env.properties
 # Edit both files with your actual values, then secure them:
 chmod 600 db.properties env.properties
 
-# 3. Run the setup (GlassFish must be running):
-./setup-glassfish-resources.sh db.properties env.properties
+# 3. Run the setup (GlassFish must be running) — either way works:
+./gf setup                                                  # via the gf CLI
+./setup-glassfish-resources.sh db.properties env.properties # directly
 
 # To tear down and recreate all resources:
-./setup-glassfish-resources.sh db.properties env.properties --delete
+./gf setup --delete
 ```
 
 Each key in `env.properties` becomes a JNDI custom resource under the configured prefix (default: `app/`). Look them up in your application with `@Resource(lookup = "app/your.key")`.
+
+### Auto-sync on deploy
+
+`./gf deploy` and `./gf full` automatically check `env.properties` and create any missing JNDI custom resources before deploying. So adding a new key to `env.properties` and running `./gf full` is enough — no need to re-run `setup` manually. (Updates to existing values still require `./gf setup --delete` to recreate.)
+
+If `env.properties` doesn't exist, the auto-sync silently skips (so projects without JNDI custom resources are unaffected).
 
 ## Troubleshooting
 

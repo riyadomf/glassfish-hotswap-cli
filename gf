@@ -34,6 +34,7 @@ GF_BASE="$(dirname "$(dirname "$ASADMIN")")/glassfish"
 DOMAIN_NAME="${GF_DOMAIN:-domain1}"
 CONTEXT_ROOT="${GF_CONTEXT_ROOT:-/}"
 DEBUG_PORT="${GF_DEBUG_PORT:-9009}"
+JNDI_PREFIX="${GF_JNDI_PREFIX:-app}"  # Must match JNDI_PREFIX in setup-glassfish-resources.sh
 
 GF_DOMAIN_DIR="$GF_BASE/domains/$DOMAIN_NAME"
 LOG_FILE="$GF_DOMAIN_DIR/logs/server.log"
@@ -176,7 +177,7 @@ find_app_name() {
     # Fallback: ask GlassFish directly (handles domain.xml-only registrations)
     local app
     app=$("$ASADMIN" list-applications 2>/dev/null \
-        | grep -v -E '^(Command|Nothing|$)' \
+        | grep -v -E '^(Command|Nothing|No |$)' \
         | awk '{print $1}' | head -1)
     if [[ -n "$app" ]]; then
         echo "$app"
@@ -221,6 +222,66 @@ require_deployed() {
         error "No application is deployed."
         echo "  Run: $0 deploy"
         exit 1
+    fi
+}
+
+# Resolve config files for JNDI resource setup.
+# Both db.properties and env.properties must exist in PROJECT_DIR.
+# Sets RESOLVED_DB_PROPS and RESOLVED_ENV_PROPS on success.
+resolve_config_files() {
+    if [[ ! -f "$PROJECT_DIR/db.properties" ]]; then
+        return 1
+    fi
+    if [[ ! -f "$PROJECT_DIR/env.properties" ]]; then
+        return 1
+    fi
+    RESOLVED_DB_PROPS="$PROJECT_DIR/db.properties"
+    RESOLVED_ENV_PROPS="$PROJECT_DIR/env.properties"
+    return 0
+}
+
+# Create missing custom resources from an env properties file.
+# Fetches existing resources once and skips any that already exist.
+# Sets JNDI_CREATED to the number of resources created.
+create_custom_resources() {
+    local env_file="$1"
+    local existing
+    JNDI_CREATED=0
+    existing=$("$ASADMIN" list-custom-resources 2>/dev/null)
+
+    while IFS='=' read -r key value; do
+        [[ -z "$key" || "$key" == \#* ]] && continue
+        key=$(echo "$key" | xargs)
+        value=$(echo "$value" | xargs)
+
+        local jndi_name="${JNDI_PREFIX}/${key}"
+
+        if echo "$existing" | grep -q "^${jndi_name}$"; then
+            continue
+        fi
+
+        local escaped_value="${value//\\/\\\\}"
+        escaped_value="${escaped_value//:/\\:}"
+
+        info "Creating: $jndi_name"
+        "$ASADMIN" create-custom-resource \
+            --restype=java.lang.String \
+            --factoryclass=org.glassfish.resources.custom.factory.PrimitivesAndStringFactory \
+            --property "value=$escaped_value" \
+            "$jndi_name"
+        JNDI_CREATED=$((JNDI_CREATED + 1))
+    done < "$env_file"
+}
+
+# Ensure JNDI custom resources are configured. Creates any missing ones.
+# Silently skips if env.properties doesn't exist (project may not use JNDI).
+ensure_jndi_resources() {
+    if [[ ! -f "$PROJECT_DIR/env.properties" ]]; then
+        return 0
+    fi
+    create_custom_resources "$PROJECT_DIR/env.properties"
+    if [[ "$JNDI_CREATED" -gt 0 ]]; then
+        success "Created ${JNDI_CREATED} custom resource(s) from env.properties"
     fi
 }
 
@@ -300,8 +361,36 @@ cmd_stop() {
     success "Domain stopped."
 }
 
+cmd_setup() {
+    require_running
+
+    local delete_flag=""
+    if [[ "${1:-}" == "--delete" ]]; then
+        delete_flag="--delete"
+    fi
+
+    if ! resolve_config_files; then
+        error "Required config files missing."
+        [[ ! -f "$PROJECT_DIR/db.properties" ]] && echo "  cp db.properties.sample db.properties"
+        [[ ! -f "$PROJECT_DIR/env.properties" ]] && echo "  cp env.properties.sample env.properties"
+        echo "Then edit the values and re-run."
+        exit 1
+    fi
+
+    if [[ ! -x "$PROJECT_DIR/setup-glassfish-resources.sh" ]]; then
+        error "setup-glassfish-resources.sh not found or not executable in ${PROJECT_DIR}."
+        exit 1
+    fi
+
+    info "DB config:  ${RESOLVED_DB_PROPS}"
+    info "Env config: ${RESOLVED_ENV_PROPS}"
+
+    "$PROJECT_DIR/setup-glassfish-resources.sh" "$RESOLVED_DB_PROPS" "$RESOLVED_ENV_PROPS" $delete_flag
+}
+
 cmd_deploy() {
     require_running
+    ensure_jndi_resources
 
     info "Building WAR..."
     cd "$PROJECT_DIR"
@@ -498,6 +587,7 @@ cmd_classes() {
 
 cmd_full() {
     require_running
+    ensure_jndi_resources
 
     info "Full rebuild + redeploy..."
     cd "$PROJECT_DIR"
@@ -556,6 +646,7 @@ ${BOLD}Quick start:${NC}
 ${BOLD}Server:${NC}
   ${GREEN}start${NC} [--no-debug]    Start domain (debug on port ${DEBUG_PORT} by default)
   ${GREEN}stop${NC}                  Stop the domain
+  ${GREEN}setup${NC} [--delete]      Configure GlassFish JDBC/JMS/JNDI resources
   ${GREEN}run${NC} [--no-debug]      Start + build + deploy (zero to running)
   ${GREEN}restart${NC} [--no-debug]  Stop + start + build + deploy
 
@@ -577,6 +668,8 @@ ${BOLD}Examples:${NC}
   ./gf classes             # Recompile + hot-reload Java (no UI sync)
   ./gf log --err           # Watch only error lines in server log
   ./gf full                # Structural change? Full rebuild + redeploy
+  ./gf setup               # Configure JDBC, JMS, and JNDI resources
+  ./gf setup --delete      # Tear down and recreate all resources
 
 See ${CYAN}README.md${NC} for setup and architecture details.
 EOF
@@ -596,6 +689,7 @@ case "$COMMAND" in
     -h|--help|help) usage ;;
     start)    cmd_start "$@" ;;
     stop)     cmd_stop ;;
+    setup)    cmd_setup "$@" ;;
     deploy)   cmd_deploy ;;
     undeploy) cmd_undeploy ;;
     run)      cmd_run "$@" ;;
