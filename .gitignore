@@ -1,2 +1,16 @@
 tools/*.class
 tools/.classpath.cache
+
+# Real config files (samples are tracked)
+db.properties
+env.properties
+
+# IntelliJ IDEA
+.idea/
+*.iml
+
+# VS Code
+.vscode/
+
+# macOS
+.DS_Store
