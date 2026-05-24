@@ -20,6 +20,7 @@ assignees: ''
 
 - **GlassFish version:** <!-- `asadmin version` -->
 - **Java version:** <!-- `java -version` -->
+- **Maven version:** <!-- `./mvnw -v` or `mvn -v` -->
 - **OS:** <!-- e.g. Ubuntu 24.04, macOS 14.5 -->
 - **`gf` version / commit:** <!-- output of `git -C <repo> rev-parse --short HEAD` or release tag -->
 

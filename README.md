@@ -45,8 +45,8 @@ If you've worked on a Jakarta EE app, you know the cycle: change one line, save,
 | | `gf` | IntelliJ GlassFish plugin |
 |---|---|---|
 | JasperReports `.jrxml` hot-reload | ✅ | ❌ |
-| Incremental Java compile (only changed files) | ✅ | ❌ (full project build) |
-| Automatic fallback to full redeploy | ✅ | ❌ |
+| Automatic fallback to full redeploy on structural change | ✅ | ❌ (manual) |
+| Compile + hot-swap in a single terminal command | ✅ | ❌ (two-step inside IDE) |
 | Works outside IntelliJ | ✅ (any terminal) | ❌ (IntelliJ only) |
 | Claude Code integration | ✅ | ❌ |
 | Requires IntelliJ Ultimate (paid) | ❌ | ✅ |
