@@ -13,8 +13,6 @@
 
 *Edit a Java file, run `./gf sync`, see the change live in the running server — no restart, no redeploy.*
 
-> The `docs/demo.tape` source is included for anyone who wants to re-record the GIF against their own project — install [vhs](https://github.com/charmbracelet/vhs) and run `vhs docs/demo.tape` from a real Jakarta EE project root.
-
 ## Why use `gf`?
 
 If you've worked on a Jakarta EE app, you know the cycle: change one line, save, wait 30–60 seconds while GlassFish redeploys, lose your train of thought. Do that twenty times a day and you've spent an hour staring at a deploy log.
@@ -24,7 +22,7 @@ If you've worked on a Jakarta EE app, you know the cycle: change one line, save,
 **What you get:**
 
 - **Fast feedback loop.** 3–6 second hot-swap vs 30–60 second redeploy. The single biggest quality-of-life upgrade for GlassFish development.
-- **JasperReports template hot-reload.** Edit a `.jrxml` file, run `./gf ui`, and the new template is live on the next report generation. IntelliJ's GlassFish plugin doesn't do this.
+- **JasperReports template hot-reload.** Edit a `.jrxml` file, run `./gf ui`, and the new template is live on the next report generation. IntelliJ's GlassFish plugin doesn't do this. *Requires a small one-time change in your report-loading code — see [Hot-reloading JasperReports templates](#hot-reloading-jasperreports-templates).*
 - **Works from any terminal.** VS Code, Vim, IntelliJ Community, plain SSH — anywhere you can run a shell. No IDE lock-in, no IntelliJ Ultimate license required.
 - **Automatic fallback.** Hot-swap when it works, full redeploy when it doesn't. The tool figures out which one you need.
 - **Claude Code integration.** Comes with a `/gf` skill so Claude Code knows the whole workflow out of the box.
@@ -162,7 +160,34 @@ The WAR file is auto-detected from `target/*.war` after each build. The Java ver
 
 ### File Sync
 
-`rsync` copies XHTML, CSS, JS, and image files from `src/main/webapp/` into GlassFish's exploded deployment directory, and `.jrxml` report templates from `src/main/resources/reports/` into `WEB-INF/classes/reports/`. Changes are visible on browser refresh (UI) or next report generation (.jrxml) without redeployment.
+`rsync` copies XHTML, CSS, JS, and image files from `src/main/webapp/` into GlassFish's exploded deployment directory, and `.jrxml` report templates from `src/main/resources/reports/` into `WEB-INF/classes/reports/`. Browser-facing UI changes are visible on the next page refresh. `.jrxml` changes need a one-time app-side hook to be picked up at runtime — see [Hot-reloading JasperReports templates](#hot-reloading-jasperreports-templates) below.
+
+### Hot-reloading JasperReports templates
+
+`./gf ui` puts the new `.jrxml` on disk in the exploded deployment. That's only half the story. JasperReports normally reads templates via the classloader (`getClass().getResourceAsStream(...)`), which **caches the bytes the first time a report is loaded** — so the next report generation will keep using the old template until you redeploy.
+
+The fix is a small one-time change to your report-loading code. Detect when the resource is being served from an exploded deployment (the URL protocol is `file:` rather than `jar:`) and read it directly from the filesystem in that case:
+
+```java
+public JasperReport compileReport(String reportPath) throws JRException {
+    // In exploded deployments (dev), read from filesystem to bypass classloader cache.
+    URL resource = getClass().getResource(reportPath);
+    if (resource != null && "file".equals(resource.getProtocol())) {
+        try (InputStream is = Files.newInputStream(Path.of(resource.toURI()))) {
+            return JasperCompileManager.compileReport(is);
+        } catch (Exception ignored) { /* fall through to classloader path */ }
+    }
+    // Production path: read through the classloader as normal.
+    try (InputStream is = getClass().getResourceAsStream(reportPath)) {
+        if (is == null) throw new JRException("Report not found: " + reportPath);
+        return JasperCompileManager.compileReport(is);
+    }
+}
+```
+
+Production (WAR served from a JAR-style classpath) goes through the classloader as normal. Development (exploded deployment, `file:` URLs) goes through the filesystem and picks up the rsynced changes immediately. Same code, two paths, no `DEV_MODE` flag needed.
+
+The rsync source and destination paths are settings in `gf` (look for `sync_resource_files` in the script) — adjust them once to match your project's report layout.
 
 ## Files
 
