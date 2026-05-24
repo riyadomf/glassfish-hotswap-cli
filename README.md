@@ -1,15 +1,56 @@
 # gf — GlassFish Dev Workflow CLI
 
-A CLI tool for local GlassFish development. Handles server lifecycle, incremental Java compilation with JDWP hot-swap, and UI file syncing — all in one command.
+> **Stop waiting 60 seconds for GlassFish to redeploy.** `gf` hot-swaps your Java code in 3–6 seconds, reloads JasperReports templates without a restart, and works from any terminal.
 
-## Why `gf` over IntelliJ's GlassFish Plugin
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![CI](https://github.com/riyadomf/glassfish-hotswap-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/riyadomf/glassfish-hotswap-cli/actions/workflows/ci.yml)
+[![GlassFish 7 & 8](https://img.shields.io/badge/GlassFish-7%20%7C%208-blue)](https://glassfish.org/)
+[![Java 17+](https://img.shields.io/badge/Java-17%2B-orange)](https://adoptium.net/)
 
-- **Claude Code integration** — Claude Code can use `./gf` commands autonomously, or invoke the `/gf` skill to manage the server from within the conversation
-- **Hot-reload for Jasper reports** (.jrxml) — `./gf ui` syncs JasperReports templates to the running server; IntelliJ's "Update resources" only covers webapp files (XHTML/CSS/JS)
-- **Incremental compile** — only recompiles changed `.java` files (~3-6s), vs IntelliJ's full project build
-- **Automatic fallback** — if JDWP hot-swap fails (structural change), auto-falls back to a full redeploy. If an IDE debugger is already attached, skips the redeploy and prompts you to hot-swap from the IDE
-- **Self-healing** — auto-fixes broken JDWP debug-options in `domain.xml` before startup
-- **IDE-independent** — works from any terminal (VS Code, Vim, SSH), not tied to IntelliJ
+## Demo
+
+<!--
+  To record the demo GIF:
+    1. Install vhs (https://github.com/charmbracelet/vhs)
+    2. From this repo root, against a deployed Jakarta EE project: vhs docs/demo.tape
+    3. Commit the produced docs/demo.gif and uncomment the image line below.
+-->
+<!-- ![gf in action](docs/demo.gif) -->
+
+```text
+$ ./gf sync -v
+→ Incremental compile (2 files changed)... done in 1.4s
+→ JDWP hot-swap (com.example.HelloController)... done in 0.9s
+✓ Live in 3.1s. No restart, no redeploy.
+```
+
+*Edit a Java file, run `gf sync`, see the change live in the running server.*
+
+## Why use `gf`?
+
+If you've worked on a Jakarta EE app, you know the cycle: change one line, save, wait 30–60 seconds while GlassFish redeploys, lose your train of thought. Do that twenty times a day and you've spent an hour staring at a deploy log.
+
+`gf` gets that wait down to **3–6 seconds** by using JDWP — the JVM's built-in debugger protocol — to hot-swap the modified classes directly into the running server. When a change is too structural for hot-swap (new method signatures, new fields), it falls back to a normal redeploy automatically. You never have to think about which mode to use.
+
+**What you get:**
+
+- **Fast feedback loop.** 3–6 second hot-swap vs 30–60 second redeploy. The single biggest quality-of-life upgrade for GlassFish development.
+- **JasperReports template hot-reload.** Edit a `.jrxml` file, run `./gf ui`, and the new template is live on the next report generation. IntelliJ's GlassFish plugin doesn't do this.
+- **Works from any terminal.** VS Code, Vim, IntelliJ Community, plain SSH — anywhere you can run a shell. No IDE lock-in, no IntelliJ Ultimate license required.
+- **Automatic fallback.** Hot-swap when it works, full redeploy when it doesn't. The tool figures out which one you need.
+- **Claude Code integration.** Comes with a `/gf` skill so Claude Code knows the whole workflow out of the box.
+
+## How is this different from IntelliJ's GlassFish plugin?
+
+| | `gf` | IntelliJ GlassFish plugin |
+|---|---|---|
+| JasperReports `.jrxml` hot-reload | ✅ | ❌ |
+| Incremental Java compile (only changed files) | ✅ | ❌ (full project build) |
+| Automatic fallback to full redeploy | ✅ | ❌ |
+| Works outside IntelliJ | ✅ (any terminal) | ❌ (IntelliJ only) |
+| Claude Code integration | ✅ | ❌ |
+| Requires IntelliJ Ultimate (paid) | ❌ | ✅ |
+| Cost | Free (MIT) | Bundled with Ultimate |
 
 ## Installation
 
