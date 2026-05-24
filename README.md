@@ -255,6 +255,8 @@ If `env.properties` doesn't exist, the auto-sync silently skips (so projects wit
 
 **Classpath cache stale** — If you changed `pom.xml` dependencies, the cache auto-refreshes on next `./gf classes`. To force: delete `tools/.classpath.cache`.
 
+**`asadmin: Authentication failed for user: null`** — The admin endpoint requires credentials and none are configured. Resolve with either `asadmin login` (interactive, saves to `~/.gfclient/pass`) or `asadmin change-admin-password` (set or change the admin password), then re-run.
+
 ## License
 
 [MIT](LICENSE)

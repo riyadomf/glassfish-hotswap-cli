@@ -65,10 +65,10 @@ NC=$'\033[0m' # No Color
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
-info()    { printf '%b\n' "${CYAN}▶${NC} $*"; }
-success() { printf '%b\n' "${GREEN}✔${NC} $*"; }
-warn()    { printf '%b\n' "${YELLOW}⚠${NC} $*"; }
-error()   { printf '%b\n' "${RED}✖${NC} $*" >&2; }
+info()    { printf '%b\n' "${BOLD}${CYAN}▶${NC}${BOLD} $*${NC}"; }
+success() { printf '%b\n' "${BOLD}${GREEN}✔${NC}${BOLD} $*${NC}"; }
+warn()    { printf '%b\n' "${BOLD}${YELLOW}⚠${NC}${BOLD} $*${NC}"; }
+error()   { printf '%b\n' "${BOLD}${RED}✖${NC}${BOLD} $*${NC}" >&2; }
 
 # Time tracking: returns current epoch in milliseconds.
 # macOS BSD date lacks %N; fall back to perl (ships with macOS, Time::HiRes is core).
@@ -174,9 +174,17 @@ find_app_name() {
         done
     fi
 
-    # Fallback: ask GlassFish directly (handles domain.xml-only registrations)
-    local app
-    app=$("$ASADMIN" list-applications 2>/dev/null \
+    # Fallback: ask GlassFish directly (handles domain.xml-only registrations).
+    # `list-applications` exits 0 with "Nothing to list." when truly empty;
+    # a non-zero exit here means a real failure (auth, connectivity) and should
+    # surface to the user instead of being swallowed into an empty result.
+    local app raw
+    if ! raw=$("$ASADMIN" list-applications 2>&1); then
+        error "asadmin list-applications failed:"
+        printf '%s\n' "$raw" >&2
+        return 1
+    fi
+    app=$(printf '%s\n' "$raw" \
         | grep -v -E '^(Command|Nothing|No |$)' \
         | awk '{print $1}' | head -1)
     if [[ -n "$app" ]]; then
@@ -225,6 +233,25 @@ require_deployed() {
     fi
 }
 
+# Verify asadmin can authenticate against the running domain's admin endpoint.
+# Probes a cheap, side-effect-free admin command; on failure, prints asadmin's
+# own diagnostic plus a short guide to the standard fixes and exits.
+ensure_asadmin_ready() {
+    local out
+    if out=$("$ASADMIN" list-jdbc-resources 2>&1); then
+        return 0
+    fi
+
+    error "asadmin cannot reach the GlassFish admin endpoint."
+    printf '%s\n' "$out" >&2
+    echo "" >&2
+    echo "  This usually means admin authentication is required and no credentials are configured." >&2
+    echo "  Resolve it with one of:" >&2
+    echo "    asadmin login                  # interactive login, saves to ~/.gfclient/pass" >&2
+    echo "    asadmin change-admin-password  # set or change the admin password" >&2
+    exit 1
+}
+
 # Resolve config files for JNDI resource setup.
 # Both db.properties and env.properties must exist in PROJECT_DIR.
 # Sets RESOLVED_DB_PROPS and RESOLVED_ENV_PROPS on success.
@@ -247,7 +274,11 @@ create_custom_resources() {
     local env_file="$1"
     local existing
     JNDI_CREATED=0
-    existing=$("$ASADMIN" list-custom-resources 2>/dev/null)
+    if ! existing=$("$ASADMIN" list-custom-resources 2>&1); then
+        error "asadmin list-custom-resources failed:"
+        printf '%s\n' "$existing" >&2
+        return 1
+    fi
 
     while IFS='=' read -r key value; do
         [[ -z "$key" || "$key" == \#* ]] && continue
@@ -363,6 +394,7 @@ cmd_stop() {
 
 cmd_setup() {
     require_running
+    ensure_asadmin_ready
 
     local delete_flag=""
     if [[ "${1:-}" == "--delete" ]]; then
@@ -390,11 +422,12 @@ cmd_setup() {
 
 cmd_deploy() {
     require_running
+    ensure_asadmin_ready
     ensure_jndi_resources
 
     info "Building WAR..."
     cd "$PROJECT_DIR"
-    "$MVNW" clean package -DskipTests -q
+    "$MVNW" clean package -DskipTests
     local war_file
     war_file="$(find_war_file)"
     success "WAR built: ${war_file}"
@@ -407,7 +440,7 @@ cmd_deploy() {
     fi
 
     info "Deploying to GlassFish..."
-    "$ASADMIN" deploy --contextroot "$CONTEXT_ROOT" "$war_file"
+    "$ASADMIN" deploy --upload=true --contextroot "$CONTEXT_ROOT" "$war_file"
 
     touch "$LAST_COMPILE_MARKER"
     success "Deployed. App available at http://localhost:8080${CONTEXT_ROOT}"
@@ -415,6 +448,7 @@ cmd_deploy() {
 
 cmd_undeploy() {
     require_running
+    ensure_asadmin_ready
 
     local app_name
     if ! app_name="$(find_app_name)"; then
@@ -440,6 +474,7 @@ cmd_restart() {
 
 cmd_ui() {
     require_running
+    ensure_asadmin_ready
     require_deployed
 
     local exploded
@@ -465,6 +500,7 @@ cmd_classes() {
     total_start=$(now_ms)
 
     require_running
+    ensure_asadmin_ready
     require_deployed
 
     local hotswap_src="$PROJECT_DIR/tools/HotSwap.java"
@@ -574,7 +610,7 @@ cmd_classes() {
         if fb_app="$(find_app_name)"; then
             "$ASADMIN" undeploy "$fb_app" 2>/dev/null || true
         fi
-        "$ASADMIN" deploy --contextroot "$CONTEXT_ROOT" "$fb_war"
+        "$ASADMIN" deploy --upload=true --contextroot "$CONTEXT_ROOT" "$fb_war"
 
         success "Redeployed via fallback $(elapsed "$fb_start"). App at http://localhost:8080${CONTEXT_ROOT}"
     else
@@ -586,11 +622,12 @@ cmd_classes() {
 
 cmd_full() {
     require_running
+    ensure_asadmin_ready
     ensure_jndi_resources
 
     info "Full rebuild + redeploy..."
     cd "$PROJECT_DIR"
-    "$MVNW" clean package -DskipTests -q
+    "$MVNW" clean package -DskipTests
     local war_file
     war_file="$(find_war_file)"
     success "WAR built."
@@ -603,7 +640,7 @@ cmd_full() {
     fi
 
     info "Deploying..."
-    "$ASADMIN" deploy --contextroot "$CONTEXT_ROOT" "$war_file"
+    "$ASADMIN" deploy --upload=true --contextroot "$CONTEXT_ROOT" "$war_file"
 
     touch "$LAST_COMPILE_MARKER"
     success "Deployed. App available at http://localhost:8080${CONTEXT_ROOT}"
