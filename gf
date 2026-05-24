@@ -477,7 +477,7 @@ cmd_classes() {
     fi
 
     cd "$PROJECT_DIR"
-    local timestamp changed_files needs_swap=true
+    local timestamp changed_files
 
     # Try incremental compile (fast path)
     if changed_files=$(find_changed_java_files); then
@@ -547,7 +547,6 @@ cmd_classes() {
         info "Total: $(elapsed "$total_start")"
         return 0
     else
-        needs_swap=false
         success "No changed .java files. Nothing to do."
         info "Total: $(elapsed "$total_start")"
         return 0
