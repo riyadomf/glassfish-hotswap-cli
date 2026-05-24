@@ -75,11 +75,36 @@ The whole thing is a single Bash script plus one Java file you can drop into any
 
 The honest answer is: I tried, and it still wasn't enough.
 
-**JasperReports templates.** This was the killer. Half the enterprise GlassFish apps I've worked on use JasperReports for PDF generation. The `.jrxml` template files live in `src/main/resources/reports/` and get compiled at runtime by `JasperCompileManager`. IntelliJ's "Update resources" action — the thing that's supposed to push your changes into a running server without redeploying — **only knows about webapp files**: XHTML, CSS, JS, images. It doesn't touch `.jrxml`.
+**JasperReports templates.** This was the killer. Half the enterprise GlassFish apps I've worked on use JasperReports for PDF generation. The `.jrxml` template files live somewhere on the classpath (typically `src/main/resources/reports/`) and get compiled at runtime by `JasperCompileManager`. IntelliJ's "Update resources" action — the thing that's supposed to push your changes into a running server without redeploying — **only knows about webapp files**: XHTML, CSS, JS, images. It doesn't touch `.jrxml`.
 
 So even with Ultimate, my workflow for a report-template change was: edit the `.jrxml`, redeploy (2 minutes), check the PDF. Or copy the file by hand into GlassFish's exploded deployment directory and hope I got the path right.
 
-`./gf ui` runs an `rsync` from `src/main/resources/reports/` into `WEB-INF/classes/reports/` of the running deployment. Next time the user generates a report, JasperReports picks up the new template. No restart. Cycle drops from 2 minutes to under a second. **This alone saves me hours every week.**
+The fix has two halves, and I want to be honest that the second half isn't free.
+
+**Half one: the CLI does the file swap.** `./gf ui` runs `rsync` from your source tree (e.g. `src/main/resources/reports/`) into the matching path under GlassFish's exploded deployment (e.g. `WEB-INF/classes/reports/`). The source and destination paths are settings in the script — you adjust them once to match your project's layout and the workflow is set for the lifetime of the project.
+
+**Half two: the application reads the file in a way that picks up the swap.** This is the half that surprised me. JasperReports normally reads templates through the classloader — `getClass().getResourceAsStream(reportPath)` — which is correct in production but caches the bytes the first time a report is loaded. Your rsync would be invisible until you redeploy. The fix is a small one-time change: detect when the resource is being served from an exploded deployment (the URL protocol is `file:` rather than `jar:`) and read it directly from the filesystem in that case.
+
+```java
+public JasperReport compileReport(String reportPath) throws JRException {
+    // In exploded deployments (dev), read from filesystem to bypass classloader cache.
+    URL resource = getClass().getResource(reportPath);
+    if (resource != null && "file".equals(resource.getProtocol())) {
+        try (InputStream is = Files.newInputStream(Path.of(resource.toURI()))) {
+            return JasperCompileManager.compileReport(is);
+        } catch (Exception ignored) { /* fall through to classloader path */ }
+    }
+    // Production path: read through the classloader as normal.
+    try (InputStream is = getClass().getResourceAsStream(reportPath)) {
+        if (is == null) throw new JRException("Report not found: " + reportPath);
+        return JasperCompileManager.compileReport(is);
+    }
+}
+```
+
+Production (the WAR is read out of a JAR-style classpath) goes through the classloader. Development (exploded deployment, `file:` URLs) goes through the filesystem and picks up the rsynced changes immediately. Same code, two paths, no environment flag, no `if (DEV_MODE)` branch.
+
+Cycle drops from 2 minutes to under a second. **This alone saves me hours every week.**
 
 **The classloader churn problem.** Every time you redeploy a GlassFish app, the server spins up a new application classloader. The old one — and every class it ever loaded — can't be garbage collected until every reference to it is gone. In long-running development sessions with dozens of redeploys, this is famously how you end up with `OutOfMemoryError: Metaspace` and a domain you have to restart.
 
