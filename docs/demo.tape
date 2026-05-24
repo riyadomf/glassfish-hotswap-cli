@@ -18,27 +18,34 @@ Set Theme "Dracula"
 Set PlaybackSpeed 1.0
 Set Padding 20
 
-# Open with the project root visible.
-Type "# Make a change to a Java file..."
-Enter
-Sleep 600ms
+# Brief beat so the opening prompt is visible.
+Sleep 800ms
 
-# Replace this with a real edit against your demo project.
-# Example: change a return value in a controller class.
-Type "sed -i 's/Hello/Hello, world/' src/main/java/com/example/HelloController.java"
+# Step 1: Edit a Java source file. The `#` prefix marks narration, not commands.
+Type "# Step 1: Make a small change to a Java file..."
 Enter
 Sleep 800ms
 
-Type "# ...then hot-swap it into the running GlassFish."
+Type "sed -i 's/logger.info/logger.error/' src/main/java/com/dsi/bcic/shared/user/view/UserView.java"
+Sleep 600ms
 Enter
-Sleep 500ms
+Sleep 800ms
+
+# Step 2: Hot-swap the change into the running GlassFish.
+Type "# Step 2: Hot-swap it into the running GlassFish..."
+Enter
+Sleep 800ms
 
 Type "./gf sync -v"
+Sleep 400ms
 Enter
 
-# Wait for the hot-swap output (~3-6s).
-Sleep 6s
+# Wait for the hot-swap output (~3-8s).
+Sleep 8s
 
+# Wrap up.
 Type "# Done. No restart, no redeploy."
 Enter
-Sleep 2s
+
+# Hold the final frame so viewers can read the result.
+Sleep 2500ms

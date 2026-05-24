@@ -9,22 +9,11 @@
 
 ## Demo
 
-<!--
-  To record the demo GIF:
-    1. Install vhs (https://github.com/charmbracelet/vhs)
-    2. From this repo root, against a deployed Jakarta EE project: vhs docs/demo.tape
-    3. Commit the produced docs/demo.gif and uncomment the image line below.
--->
-<!-- ![gf in action](docs/demo.gif) -->
+![gf in action](docs/demo.gif)
 
-```text
-$ ./gf sync -v
-→ Incremental compile (2 files changed)... done in 1.4s
-→ JDWP hot-swap (com.example.HelloController)... done in 0.9s
-✓ Live in 3.1s. No restart, no redeploy.
-```
+*Edit a Java file, run `./gf sync`, see the change live in the running server — no restart, no redeploy.*
 
-*Edit a Java file, run `gf sync`, see the change live in the running server.*
+> The `docs/demo.tape` source is included for anyone who wants to re-record the GIF against their own project — install [vhs](https://github.com/charmbracelet/vhs) and run `vhs docs/demo.tape` from a real Jakarta EE project root.
 
 ## Why use `gf`?
 
