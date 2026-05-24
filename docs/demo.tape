@@ -22,11 +22,12 @@ Set Padding 20
 Sleep 800ms
 
 # Step 1: Edit a Java source file. The `#` prefix marks narration, not commands.
+# Replace the path below with a real file from your own project before re-recording.
 Type "# Step 1: Make a small change to a Java file..."
 Enter
 Sleep 800ms
 
-Type "sed -i 's/logger.info/logger.error/' src/main/java/com/dsi/bcic/shared/user/view/UserView.java"
+Type "sed -i 's/logger.info/logger.error/' src/main/java/com/example/HelloController.java"
 Sleep 600ms
 Enter
 Sleep 800ms
