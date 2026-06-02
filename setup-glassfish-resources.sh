@@ -7,7 +7,7 @@
 # resources (uncomment the JMS section below if needed).
 #
 # Run once per GlassFish server (or with --delete to recreate after
-# config changes). Idempotent — safe to run multiple times.
+# config changes). Idempotent, safe to run multiple times.
 #
 # Usage:
 #   ./setup-glassfish-resources.sh <db.properties> <env.properties>
@@ -258,7 +258,7 @@ done < "$ENV_FILE"
 echo ""
 echo "=== Configuring JVM heap dump on OOM ==="
 
-# Remove existing options first (idempotent — ignore errors if not present)
+# Remove existing options first (idempotent, ignore errors if not present)
 $ASADMIN delete-jvm-options -- "-XX\:+HeapDumpOnOutOfMemoryError" 2>/dev/null || true
 $ASADMIN delete-jvm-options -- "-XX\:HeapDumpPath=/tmp/glassfish-heapdump.hprof" 2>/dev/null || true
 

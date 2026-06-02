@@ -1,4 +1,4 @@
-# gf — GlassFish Dev Workflow CLI
+# gf: GlassFish Dev Workflow CLI
 
 > **Stop waiting 60 seconds for GlassFish to redeploy.** `gf` hot-swaps your Java code in 3–6 seconds, reloads JasperReports templates without a restart, and works from any terminal.
 
@@ -11,19 +11,19 @@
 
 ![gf in action](docs/demo.gif)
 
-*Edit a Java file, run `./gf sync`, see the change live in the running server — no restart, no redeploy.*
+*Edit a Java file, run `./gf sync`, see the change live in the running server, no restart, no redeploy.*
 
 ## Why use `gf`?
 
 If you've worked on a Jakarta EE app, you know the cycle: change one line, save, wait 30–60 seconds while GlassFish redeploys, lose your train of thought. Do that twenty times a day and you've spent an hour staring at a deploy log.
 
-`gf` gets that wait down to **3–6 seconds** by using JDWP — the JVM's built-in debugger protocol — to hot-swap the modified classes directly into the running server. When a change is too structural for hot-swap (new method signatures, new fields), it falls back to a normal redeploy automatically. You never have to think about which mode to use.
+`gf` gets that wait down to **3–6 seconds** by using JDWP, the JVM's built-in debugger protocol, to hot-swap the modified classes directly into the running server. When a change is too structural for hot-swap (new method signatures, new fields), it falls back to a normal redeploy automatically. You never have to think about which mode to use.
 
 **What you get:**
 
 - **Fast feedback loop.** 3–6 second hot-swap vs 30–60 second redeploy. The single biggest quality-of-life upgrade for GlassFish development.
-- **JasperReports template hot-reload.** Edit a `.jrxml` file, run `./gf ui`, and the new template is live on the next report generation. IntelliJ's GlassFish plugin doesn't do this. *Requires a small one-time change in your report-loading code — see [Hot-reloading JasperReports templates](#hot-reloading-jasperreports-templates).*
-- **Works from any terminal.** VS Code, Vim, IntelliJ Community, plain SSH — anywhere you can run a shell. No IDE lock-in, no IntelliJ Ultimate license required.
+- **JasperReports template hot-reload.** Edit a `.jrxml` file, run `./gf ui`, and the new template is live on the next report generation. IntelliJ's GlassFish plugin doesn't do this. *Requires a small one-time change in your report-loading code, see [Hot-reloading JasperReports templates](#hot-reloading-jasperreports-templates).*
+- **Works from any terminal.** VS Code, Vim, IntelliJ Community, plain SSH, anywhere you can run a shell. No IDE lock-in, no IntelliJ Ultimate license required.
 - **Automatic fallback.** Hot-swap when it works, full redeploy when it doesn't. The tool figures out which one you need.
 - **Claude Code integration.** Comes with a `/gf` skill so Claude Code knows the whole workflow out of the box.
 
@@ -76,7 +76,7 @@ tools/.classpath.cache
 
 - **JDK 17+** (project compiles with `--source`/`--target` auto-detected from pom.xml)
 - **GlassFish 7 or 8** installed locally
-- **Maven** (`./mvnw` wrapper or `mvn` on PATH — auto-detected)
+- **Maven** (`./mvnw` wrapper or `mvn` on PATH, auto-detected)
 - **rsync** (pre-installed on Linux and macOS)
 
 ## Setup
@@ -116,11 +116,11 @@ The WAR file is auto-detected from `target/*.war` after each build. The Java ver
 ./gf log --err        ← in a separate terminal (tail error logs)
 ```
 
-- **UI-only changes** (XHTML/CSS/JS): `./gf ui` — instant rsync, just refresh browser
-- **Report templates** (.jrxml): `./gf ui` — rsync to exploded deployment, refresh on next report generation
-- **Java changes**: `./gf classes -v` — incremental compile + hot-swap (~3-6s)
-- **Both**: `./gf sync -v` — does both in one command (most common)
-- **Structural changes** (new fields, method signatures): `./gf full` — full WAR rebuild + redeploy (~30-60s)
+- **UI-only changes** (XHTML/CSS/JS): `./gf ui`, instant rsync, just refresh browser
+- **Report templates** (.jrxml): `./gf ui`, rsync to exploded deployment, refresh on next report generation
+- **Java changes**: `./gf classes -v`, incremental compile + hot-swap (~3-6s)
+- **Both**: `./gf sync -v`, does both in one command (most common)
+- **Structural changes** (new fields, method signatures): `./gf full`, full WAR rebuild + redeploy (~30-60s)
 
 ## Commands
 
@@ -160,11 +160,11 @@ The WAR file is auto-detected from `target/*.war` after each build. The Java ver
 
 ### File Sync
 
-`rsync` copies XHTML, CSS, JS, and image files from `src/main/webapp/` into GlassFish's exploded deployment directory, and `.jrxml` report templates from `src/main/resources/reports/` into `WEB-INF/classes/reports/`. Browser-facing UI changes are visible on the next page refresh. `.jrxml` changes need a one-time app-side hook to be picked up at runtime — see [Hot-reloading JasperReports templates](#hot-reloading-jasperreports-templates) below.
+`rsync` copies XHTML, CSS, JS, and image files from `src/main/webapp/` into GlassFish's exploded deployment directory, and `.jrxml` report templates from `src/main/resources/reports/` into `WEB-INF/classes/reports/`. Browser-facing UI changes are visible on the next page refresh. `.jrxml` changes need a one-time app-side hook to be picked up at runtime, see [Hot-reloading JasperReports templates](#hot-reloading-jasperreports-templates) below.
 
 ### Hot-reloading JasperReports templates
 
-`./gf ui` puts the new `.jrxml` on disk in the exploded deployment. That's only half the story. JasperReports normally reads templates via the classloader (`getClass().getResourceAsStream(...)`), which **caches the bytes the first time a report is loaded** — so the next report generation will keep using the old template until you redeploy.
+`./gf ui` puts the new `.jrxml` on disk in the exploded deployment. That's only half the story. JasperReports normally reads templates via the classloader (`getClass().getResourceAsStream(...)`), which **caches the bytes the first time a report is loaded**: so the next report generation will keep using the old template until you redeploy.
 
 The fix is a small one-time change to your report-loading code. Detect when the resource is being served from an exploded deployment (the URL protocol is `file:` rather than `jar:`) and read it directly from the filesystem in that case:
 
@@ -187,7 +187,7 @@ public JasperReport compileReport(String reportPath) throws JRException {
 
 Production (WAR served from a JAR-style classpath) goes through the classloader as normal. Development (exploded deployment, `file:` URLs) goes through the filesystem and picks up the rsynced changes immediately. Same code, two paths, no `DEV_MODE` flag needed.
 
-The rsync source and destination paths are settings in `gf` (look for `sync_resource_files` in the script) — adjust them once to match your project's report layout.
+The rsync source and destination paths are settings in `gf` (look for `sync_resource_files` in the script), adjust them once to match your project's report layout.
 
 ## Files
 
@@ -208,11 +208,11 @@ tools/
 
 1. **Run → Edit Configurations → + → Remote JVM Debug**
 2. Set **Port** to `9009`, leave other defaults (Attach, Socket, localhost)
-3. Click **Debug** — IntelliJ connects to the running GlassFish instance
+3. Click **Debug**: IntelliJ connects to the running GlassFish instance
 
 You can now set breakpoints, inspect variables, and step through code.
 
-> **Note:** JDWP only allows one debugger connection at a time. When IntelliJ is attached, `./gf classes` will compile your changes but skip the JDWP hot-swap step — use IntelliJ's **Run → Reload Changed Classes** (Ctrl+F10) instead. Disconnect IntelliJ's debugger to let `./gf classes` handle hot-swap directly.
+> **Note:** JDWP only allows one debugger connection at a time. When IntelliJ is attached, `./gf classes` will compile your changes but skip the JDWP hot-swap step. Use IntelliJ's **Run → Reload Changed Classes** (Ctrl+F10) instead. Disconnect IntelliJ's debugger to let `./gf classes` handle hot-swap directly.
 
 ## Claude Code Integration
 
@@ -229,7 +229,7 @@ Any arguments after `/gf` are passed straight to the `./gf` script. With no argu
 
 ## Resource Setup (Optional)
 
-The `setup-glassfish-resources.sh` script creates JDBC connection pools, JNDI custom resources, and optionally JMS resources in GlassFish. It's idempotent — safe to run multiple times without "already exists" errors.
+The `setup-glassfish-resources.sh` script creates JDBC connection pools, JNDI custom resources, and optionally JMS resources in GlassFish. It's idempotent, safe to run multiple times without "already exists" errors.
 
 ```bash
 # 1. Configure the script: edit variables at the top of setup-glassfish-resources.sh
@@ -241,7 +241,7 @@ cp env.properties.sample env.properties
 # Edit both files with your actual values, then secure them:
 chmod 600 db.properties env.properties
 
-# 3. Run the setup (GlassFish must be running) — either way works:
+# 3. Run the setup (GlassFish must be running), either way works:
 ./gf setup                                                  # via the gf CLI
 ./setup-glassfish-resources.sh db.properties env.properties # directly
 
@@ -253,23 +253,23 @@ Each key in `env.properties` becomes a JNDI custom resource under the configured
 
 ### Auto-sync on deploy
 
-`./gf deploy` and `./gf full` automatically check `env.properties` and create any missing JNDI custom resources before deploying. So adding a new key to `env.properties` and running `./gf full` is enough — no need to re-run `setup` manually. (Updates to existing values still require `./gf setup --delete` to recreate.)
+`./gf deploy` and `./gf full` automatically check `env.properties` and create any missing JNDI custom resources before deploying. So adding a new key to `env.properties` and running `./gf full` is enough, no need to re-run `setup` manually. (Updates to existing values still require `./gf setup --delete` to recreate.)
 
 If `env.properties` doesn't exist, the auto-sync silently skips (so projects without JNDI custom resources are unaffected).
 
 ## Troubleshooting
 
-**"asadmin not found on PATH"** — Add GlassFish's `bin/` directory to your shell PATH (e.g., `export PATH="/path/to/glassfish8/bin:$PATH"` in `~/.bashrc` or `~/.zshrc`).
+**"asadmin not found on PATH"**: Add GlassFish's `bin/` directory to your shell PATH (e.g., `export PATH="/path/to/glassfish8/bin:$PATH"` in `~/.bashrc` or `~/.zshrc`).
 
-**JDWP hot-swap fails** — The JVM can't redefine classes with structural changes (new/removed fields or methods). Use `./gf full` for a clean redeploy.
+**JDWP hot-swap fails**: The JVM can't redefine classes with structural changes (new/removed fields or methods). Use `./gf full` for a clean redeploy.
 
-**XHTML changes not visible** — Mojarra 4.1.6+ sets `FACELETS_REFRESH_PERIOD=-1` when `PROJECT_STAGE=Production`. Ensure your JSF project stage is set to `Development` (e.g., via a context parameter in `web.xml` or a Maven profile). If pages are still stale, try `./gf full`.
+**XHTML changes not visible**: Mojarra 4.1.6+ sets `FACELETS_REFRESH_PERIOD=-1` when `PROJECT_STAGE=Production`. Ensure your JSF project stage is set to `Development` (e.g., via a context parameter in `web.xml` or a Maven profile). If pages are still stale, try `./gf full`.
 
-**Debug port not reachable** — Either an IDE debugger is already attached (JDWP allows only one connection), or GlassFish wasn't started in debug mode. If an IDE debugger is connected, `./gf classes` will compile and prompt you to hot-swap from the IDE. Otherwise, restart with `./gf start` (debug is on by default).
+**Debug port not reachable**: Either an IDE debugger is already attached (JDWP allows only one connection), or GlassFish wasn't started in debug mode. If an IDE debugger is connected, `./gf classes` will compile and prompt you to hot-swap from the IDE. Otherwise, restart with `./gf start` (debug is on by default).
 
-**Classpath cache stale** — If you changed `pom.xml` dependencies, the cache auto-refreshes on next `./gf classes`. To force: delete `tools/.classpath.cache`.
+**Classpath cache stale**: If you changed `pom.xml` dependencies, the cache auto-refreshes on next `./gf classes`. To force: delete `tools/.classpath.cache`.
 
-**`asadmin: Authentication failed for user: null`** — The admin endpoint requires credentials and none are configured. Resolve with either `asadmin login` (interactive, saves to `~/.gfclient/pass`) or `asadmin change-admin-password` (set or change the admin password), then re-run.
+**`asadmin: Authentication failed for user: null`**: The admin endpoint requires credentials and none are configured. Resolve with either `asadmin login` (interactive, saves to `~/.gfclient/pass`) or `asadmin change-admin-password` (set or change the admin password), then re-run.
 
 ## License
 

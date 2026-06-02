@@ -27,7 +27,7 @@ assignees: ''
 ## Output
 
 <details>
-<summary>Full output (verbose mode if possible — e.g. `./gf sync -v`)</summary>
+<summary>Full output (verbose mode if possible, e.g. `./gf sync -v`)</summary>
 
 ```
 <paste here>

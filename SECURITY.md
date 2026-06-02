@@ -8,8 +8,8 @@
 
 If you find a security issue, **please don't open a public GitHub issue**. Instead, choose either:
 
-- **GitHub Security Advisories** — the preferred path. Go to the repo's [Security tab](https://github.com/riyadomf/glassfish-hotswap-cli/security/advisories/new) and open a private advisory. This keeps the report confidential until a fix is ready.
-- **Email** — `riyad.omf@gmail.com`. Subject line: `[gf security] <short description>`.
+- **GitHub Security Advisories**, the preferred path. Go to the repo's [Security tab](https://github.com/riyadomf/glassfish-hotswap-cli/security/advisories/new) and open a private advisory. This keeps the report confidential until a fix is ready.
+- **Email**, `riyad.omf@gmail.com`. Subject line: `[gf security] <short description>`.
 
 Please include:
 

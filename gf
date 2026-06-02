@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# gf — GlassFish dev workflow CLI
+# gf: GlassFish dev workflow CLI
 #
 # Setup:
 #   Add GlassFish bin/ to PATH, then:
@@ -362,7 +362,7 @@ cmd_start() {
     fi
 
     if [[ $start_rc -ne 0 ]]; then
-        # asadmin may timeout but the domain could still be starting — verify
+        # asadmin may timeout but the domain could still be starting, verify
         warn "asadmin exited with code ${start_rc}. Checking if domain came up..."
         local retries=6
         for ((i=1; i<=retries; i++)); do
@@ -573,13 +573,13 @@ cmd_classes() {
             success "Compiled ${file_count} file(s) $(elapsed "$timestamp")"
         fi
     elif [[ ! -f "$LAST_COMPILE_MARKER" ]]; then
-        # First run — need full compile to establish baseline
+        # First run, need full compile to establish baseline
         timestamp=$(now_ms)
-        info "First run — full Maven compile to establish baseline..."
+        info "First run, full Maven compile to establish baseline..."
         "$MVNW" compile -q
         touch "$LAST_COMPILE_MARKER"
         success "Baseline compile $(elapsed "$timestamp")"
-        info "Baseline only — skipping hot-swap (deployed app already has these classes)."
+        info "Baseline only, skipping hot-swap (deployed app already has these classes)."
         info "Total: $(elapsed "$total_start")"
         return 0
     else
@@ -597,7 +597,7 @@ cmd_classes() {
     java -cp "$PROJECT_DIR/tools" HotSwap "$DEBUG_PORT" "$CLASSES_DIR" "${timestamp:-0}" $verbose_flag || swap_rc=$?
 
     if [[ $swap_rc -eq 2 ]]; then
-        # Connection failure — IDE debugger likely holds the JDWP port
+        # Connection failure, IDE debugger likely holds the JDWP port
         warn "Could not connect to debug port ${DEBUG_PORT} (IDE debugger attached?)."
         success "Classes compiled. Use your IDE to hot-swap."
     elif [[ $swap_rc -ne 0 ]]; then
@@ -671,7 +671,7 @@ cmd_log() {
 
 usage() {
     cat <<EOF
-${BOLD}gf${NC} — GlassFish dev workflow CLI
+${BOLD}gf${NC}: GlassFish dev workflow CLI
 
 ${BOLD}Usage:${NC}  ./gf <command> [options]
 
