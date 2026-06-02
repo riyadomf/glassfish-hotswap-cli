@@ -244,6 +244,24 @@ The Bash script handles everything around it:
 
 JDWP does the actual class replacement.
 
+There's a side benefit of doing this through JDWP instead of redeploying that took me months to appreciate.
+
+Every redeploy creates a new application classloader.
+
+In large applications, repeated redeploys can gradually accumulate classloader leaks and metaspace growth.
+
+Eventually somebody restarts the domain.
+
+JDWP hot-swap doesn't create a new classloader.
+
+The existing one stays alive.
+
+The class definition changes in place.
+
+I can go an entire day with dozens of code changes and never restart GlassFish.
+
+The domain simply stays healthier.
+
 ## The interesting bit: when hot-swap can't help
 
 Of course, there are limits.
@@ -510,28 +528,6 @@ A terminal command gives you that portability.
 
 An IDE plugin doesn't.
 
-
-
-There's another advantage that only became obvious after months of use.
-
-Every redeploy creates a new application classloader.
-
-In large applications, repeated redeploys can gradually accumulate classloader leaks and metaspace growth.
-
-Eventually somebody restarts the domain.
-
-JDWP hot-swap doesn't create a new classloader.
-
-The existing one stays alive.
-
-The class definition changes in place.
-
-I can go an entire day with dozens of code changes and never restart GlassFish.
-
-The domain simply stays healthier.
-
-
-
 ## A few quality-of-life improvements
 
 Once the core workflow existed, a handful of smaller annoyances became impossible to ignore.
@@ -633,6 +629,18 @@ Running them twice produced a wall of "already exists" errors.
 Nobody likes tools they're afraid to run.
 
 Making setup repeatable turned out to be one of the highest-leverage improvements.
+
+### Bash robustness is mostly about defaults
+
+`set -euo pipefail` at the top of every script catches an absurd number of bugs that would otherwise silently swallow errors.
+
+But it has blind spots.
+
+`rsync` is the one I keep tripping over. It exits non-zero on the most boring conditions, like an optional source directory not existing, and those errors slip right past `set -e`.
+
+I ended up wrapping every `rsync` call with explicit error-to-warning handling instead of letting them kill the script.
+
+Defaults matter. Knowing where the defaults fail matters more.
 
 ### Exit codes are part of your API
 
