@@ -18,7 +18,7 @@ If you've worked on a Jakarta EE app on GlassFish, you know the rhythm:
 
 On a recent enterprise project I clocked it — a clean redeploy averaged **around two minutes** once the app was big enough to have non-trivial startup. I do this maybe forty times a day. That's a working hour or more, every day, staring at a deploy log.
 
-The really frustrating part: **most of those changes don't need a redeploy at all.** Tweaking a method body, fixing a logic bug, changing a return value — the JVM is perfectly capable of swapping a single class without restarting anything. The infrastructure for it has shipped with every JVM since Java 5. The problem is that nobody had wired that capability into a workflow I could actually use from my editor without paying a license fee or swapping out my JVM.
+The really frustrating part: **most of those changes don't need a redeploy at all.** Tweaking a method body, fixing a logic bug, changing a return value — the JVM is perfectly capable of swapping a single class without restarting anything. The infrastructure for it has shipped with every JVM since Java 5. The problem is that none of the existing solutions gave you a way to hot-swap from a plain command line. They all assumed an IDE in the foreground, a paid license, or a custom JVM build. Without a CLI entry point, anything that wasn't a human-driving-an-IDE — a shell script, a Make target, a CI pipeline, an AI agent like Claude Code — couldn't trigger a hot-swap at all.
 
 So I built one. It's called `gf`, it's a single Bash script plus 200 lines of Java, and it gets that 2-minute wait down to **3 to 6 seconds.** Five seconds is the rough mental shorthand I now use.
 
@@ -26,21 +26,19 @@ It's at [github.com/riyadomf/glassfish-hotswap-cli](https://github.com/riyadomf/
 
 ## What I tried first
 
-Before writing my own tool, I went through every option I could find.
+Before writing my own tool, I tried some of the obvious options.
 
-**IntelliJ's GlassFish plugin.** It does class hot-swap on debug, but only inside IntelliJ Ultimate — which is paid. Even if your team has Ultimate licenses, you're locked into IntelliJ for the fast-feedback workflow. I bounce between VS Code (for typing speed), Vim (over SSH), and IntelliJ Community for refactors. I didn't want my dev loop to be the deciding factor for which editor I'm allowed to open.
+**IntelliJ's GlassFish plugin.** It does class hot-swap on debug, but only inside IntelliJ Ultimate — which is paid. Even if your team has Ultimate licenses, you're locked into IntelliJ for the fast-feedback workflow. My day-to-day setup is Claude Code in a tmux session, with VS Code or IntelliJ Community alongside for editing. I didn't want the fast-feedback loop gated on every developer having an IntelliJ Ultimate window in the foreground.
 
-**JRebel.** Genuinely excellent. Costs €600/year per developer. A hard sell at any company that hasn't already standardized on it, and a non-starter for side projects or junior teammates.
+**JRebel.** Genuinely excellent. Also costly enough to be a hard sell at any company that hasn't already standardized on it, and a non-starter for side projects or junior teammates.
 
 **Plain `asadmin redeploy`.** No improvement over what I already had — a full WAR redeploy is the slow path we're trying to avoid.
 
-**HotSwapAgent.** Promising in theory, fiddly in practice. It wants specific JVM configuration that didn't compose cleanly with our team's existing GlassFish setup, and the docs assume you already know how its plugin system works.
-
-**DCEVM (with or without HotSwapAgent).** This is the heavyweight option. DCEVM is a HotSpot patch that lets you redefine class *structure* — add methods, change signatures, even rename fields. Stack HotSwapAgent on top and you get framework-aware reload (Spring beans get re-wired, Hibernate caches get cleared, the works). It's genuinely powerful when it works. But:
+**DCEVM.** This is the heavyweight option. DCEVM is a HotSpot patch that lets you redefine class *structure* — add methods, change signatures, even rename fields. It's genuinely powerful when it works. But:
 
 - It requires running on a **custom JVM build**. Not a flag on a stock JDK, not an agent jar — an actual replacement `java` binary.
 - DCEVM's release cadence has historically **lagged mainline JDK LTSes by a year or more**. If your project is pinned to a newer JDK, you may not have a DCEVM build available at all.
-- On enterprise setups where the JVM choice is decided three layers above me on the org chart, swapping it out isn't an option.
+- In many enterprise setups, swapping the JVM out isn't an option.
 
 What I actually wanted was something that ran on **whatever JDK my team already had**, integrated with **whatever editor I felt like using that day**, and just did the obvious thing: recompile the file I touched, push the bytes into the running server, and get out of the way.
 
@@ -64,10 +62,13 @@ That's the entire dev loop. Edit a file. Run `./gf sync`. The change is live in 
 
 A few sibling commands round out the workflow:
 
+- `./gf sync` — the main loop: incremental compile + JDWP hot-swap + UI sync. What you run after almost every change.
 - `./gf ui` — rsync XHTML, CSS, JS, and JasperReports templates into the exploded deployment. No compile, no JVM round-trip. Just refresh the browser.
 - `./gf classes -v` — compile + hot-swap only (no UI sync). What you want when you're iterating purely on Java code.
 - `./gf full` — clean Maven build + full `asadmin` redeploy. The escape hatch when you've changed something hot-swap can't handle.
 - `./gf log --err` — tail the GlassFish server log, filtered to errors. Run it in a second pane.
+
+Because it's a plain CLI, it's scriptable. Anything that can drive a terminal can drive a hot-swap — your shell history, a Makefile, a CI hook, or an AI agent like Claude Code asking "redeploy that and tail the log." This is the part the IDE-integrated options couldn't give you, and the part that ended up mattering most once I started letting Claude Code drive the loop end-to-end.
 
 The whole thing is a single Bash script plus one Java file you can drop into any Maven + GlassFish 7/8 project. It's been my daily driver for the past several months.
 
@@ -83,7 +84,7 @@ The fix has two halves, and I want to be honest that the second half isn't free.
 
 **Half one: the CLI does the file swap.** `./gf ui` runs `rsync` from your source tree (e.g. `src/main/resources/reports/`) into the matching path under GlassFish's exploded deployment (e.g. `WEB-INF/classes/reports/`). The source and destination paths are settings in the script — you adjust them once to match your project's layout and the workflow is set for the lifetime of the project.
 
-**Half two: the application reads the file in a way that picks up the swap.** This is the half that surprised me. JasperReports normally reads templates through the classloader — `getClass().getResourceAsStream(reportPath)` — which is correct in production but caches the bytes the first time a report is loaded. Your rsync would be invisible until you redeploy. The fix is a small one-time change: detect when the resource is being served from an exploded deployment (the URL protocol is `file:` rather than `jar:`) and read it directly from the filesystem in that case.
+**Half two: the application reads the file in a way that picks up the swap.** JasperReports normally reads templates through the classloader — `getClass().getResourceAsStream(reportPath)` — which is correct in production but caches the bytes the first time a report is loaded. Your rsync would be invisible until you redeploy. The fix is a small one-time change: detect when the resource is being served from an exploded deployment (the URL protocol is `file:` rather than `jar:`) and read it directly from the filesystem in that case.
 
 ```java
 public JasperReport compileReport(String reportPath) throws JRException {
@@ -184,8 +185,6 @@ The repo ships with a [Claude Code](https://www.anthropic.com/news/claude-code) 
 This wasn't a planned feature; I added it because I kept asking Claude "can you redeploy that and tail the log" and realized the skill should just *be* the workflow rather than me re-explaining it every session.
 
 ## What I learned
-
-A few things that surprised me along the way.
 
 **Bash robustness is mostly about defaults.** `set -euo pipefail` at the top of every script catches an absurd number of bugs that would otherwise silently swallow errors. `rsync` errors in particular love to slip past `set -e` because they exit non-zero on the most boring conditions (e.g. an optional directory not existing). I ended up wrapping `rsync` calls with explicit error-to-warning handling instead of letting them kill the script.
 
