@@ -1,216 +1,727 @@
-# How I Reduced GlassFish Redeploy Time from 2 Minutes to 5 Seconds
+# How I Used JDWP Class Redefinition to Cut GlassFish Redeploys from 2 Minutes to 5 Seconds
 
-*Or: how I built a CLI-based hot-swap agent that doesn't need IntelliJ Ultimate, doesn't need a custom JVM, and reloads JasperReports templates while it's at it.*
+*Building a command-line hot-swap workflow for GlassFish using JVM debugging internals: no IntelliJ Ultimate, no JRebel, no custom JVM.*
 
-*Originally posted at: TODO add Dev.to URL once published.*
-*Repo: [github.com/riyadomf/glassfish-hotswap-cli](https://github.com/riyadomf/glassfish-hotswap-cli)*
+*Repo: [glassfish-hotswap-cli](https://github.com/riyadomf/glassfish-hotswap-cli)*
 
----
+{% embed https://github.com/riyadomf/glassfish-hotswap-cli %}
 
 ## The 2-minute cliff
 
-If you've worked on a Jakarta EE app on GlassFish, you know the rhythm:
+If you've worked on a Jakarta EE application running on GlassFish, you probably know this routine.
 
-1. Change one line of Java.
+1. Change a line of Java.
 2. Save.
-3. Wait. Maven builds the WAR. GlassFish undeploys the old version, deploys the new one, re-warms the JPA cache, re-initializes EJBs and CDI beans, restarts the JSF lifecycle, finally finishes.
-4. By the time the deploy log scrolls past, you've forgotten what you were doing.
+3. Rebuild the WAR.
+4. Wait while it undeploys, redeploys, and re-warms CDI, EJBs, JPA, JSF, and everything else.
 
-On a recent enterprise project I clocked it — a clean redeploy averaged **around two minutes** once the app was big enough to have non-trivial startup. I do this maybe forty times a day. That's a working hour or more, every day, staring at a deploy log.
+Then finally refresh the browser.
 
-The really frustrating part: **most of those changes don't need a redeploy at all.** Tweaking a method body, fixing a logic bug, changing a return value — the JVM is perfectly capable of swapping a single class without restarting anything. The infrastructure for it has shipped with every JVM since Java 5. The problem is that none of the existing solutions gave you a way to hot-swap from a plain command line. They all assumed an IDE in the foreground, a paid license, or a custom JVM build. Without a CLI entry point, anything that wasn't a human-driving-an-IDE — a shell script, a Make target, a CI pipeline, an AI agent like Claude Code — couldn't trigger a hot-swap at all.
+By the time the deploy log finishes scrolling, you've forgotten what you were testing in the first place.
 
-So I built one. It's called `gf`, it's a single Bash script plus 200 lines of Java, and it gets that 2-minute wait down to **3 to 6 seconds.** Five seconds is the rough mental shorthand I now use.
+On a recent enterprise project I decided to measure it.
 
-It's at [github.com/riyadomf/glassfish-hotswap-cli](https://github.com/riyadomf/glassfish-hotswap-cli), MIT-licensed.
+A normal redeploy averaged around **two minutes**.
+
+Two minutes doesn't sound terrible until you realize how often it happens. Forty redeploys a day is common when you're deep in a feature or chasing a bug. That's well over an hour spent staring at deployment logs instead of writing code.
+
+The frustrating part is that most of those changes don't actually require a redeploy.
+
+Changing a method body. Fixing a conditional. Adjusting a calculation. Returning a different value.
+
+The JVM already knows how to handle those changes. The infrastructure for it has shipped with every JVM since Java 5.
+
+> The JVM has been able to hot-swap classes for nearly two decades. The problem wasn't capability. It was access.
+
+Most hot-swap solutions assume one of three things:
+
+* You're using a specific IDE.
+* You're paying for a commercial product.
+* You're running a custom JVM.
+
+What I wanted was much simpler.
+
+I wanted a command I could run from a terminal.
+
+Something like:
+
+```bash
+./gf sync
+```
+
+A command that could be called from Bash, Make, CI pipelines, tmux, SSH sessions, or even an AI coding agent.
+
+Surprisingly, I couldn't find one.
+
+So I built it.
+
+The result is a tiny tool called `gf`.
+
+It's mostly Bash. About 200 lines of Java. And it reduced my feedback loop from roughly two minutes to somewhere between three and six seconds.
+
+Five seconds is the number I use in my head now.
+
+
 
 ## What I tried first
 
-Before writing my own tool, I tried some of the obvious options.
+Before building anything, I tried the obvious options.
 
-**IntelliJ's GlassFish plugin.** It does class hot-swap on debug, but only inside IntelliJ Ultimate — which is paid. Even if your team has Ultimate licenses, you're locked into IntelliJ for the fast-feedback workflow. My day-to-day setup is Claude Code in a tmux session, with VS Code or IntelliJ Community alongside for editing. I didn't want the fast-feedback loop gated on every developer having an IntelliJ Ultimate window in the foreground.
+### IntelliJ Ultimate
 
-**JRebel.** Genuinely excellent. Also costly enough to be a hard sell at any company that hasn't already standardized on it, and a non-starter for side projects or junior teammates.
+IntelliJ's GlassFish integration supports hot-swap while debugging.
 
-**Plain `asadmin redeploy`.** No improvement over what I already had — a full WAR redeploy is the slow path we're trying to avoid.
+It works.
 
-**DCEVM.** This is the heavyweight option. DCEVM is a HotSpot patch that lets you redefine class *structure* — add methods, change signatures, even rename fields. It's genuinely powerful when it works. But:
+The catch is that the workflow lives entirely inside IntelliJ Ultimate.
 
-- It requires running on a **custom JVM build**. Not a flag on a stock JDK, not an agent jar — an actual replacement `java` binary.
-- DCEVM's release cadence has historically **lagged mainline JDK LTSes by a year or more**. If your project is pinned to a newer JDK, you may not have a DCEVM build available at all.
-- In many enterprise setups, swapping the JVM out isn't an option.
+That's fine if everyone on your team already uses Ultimate and never leaves it.
 
-What I actually wanted was something that ran on **whatever JDK my team already had**, integrated with **whatever editor I felt like using that day**, and just did the obvious thing: recompile the file I touched, push the bytes into the running server, and get out of the way.
+My workflow is different.
 
-Nothing existed that did all three.
+Some days I'm in IntelliJ Community. Some days VS Code. Sometimes I'm in a terminal with Claude Code driving the changes while I watch logs in tmux.
+
+I wanted the fast feedback loop to follow me, not the editor.
+
+### JRebel
+
+JRebel is genuinely impressive.
+
+If your company already pays for it, you should absolutely evaluate it.
+
+For smaller teams, side projects, contractors, and junior developers, licensing costs can be a tougher conversation.
+
+I wanted something anybody could clone and use immediately.
+
+### Plain redeploys
+
+This was my baseline.
+
+Nothing wrong with it.
+
+Just slow.
+
+### DCEVM
+
+DCEVM is probably the most technically ambitious solution in this space.
+
+Unlike standard JDWP hot-swap, it can redefine the structure of classes. New methods, new fields, signature changes.
+
+That's powerful.
+
+But it comes with tradeoffs:
+
+* You need a custom JVM build.
+* Support for newer JDK releases often arrives later.
+* Many enterprise environments don't allow replacing the approved JDK.
+
+I wasn't looking for ultimate flexibility.
+
+I was looking for the fastest path through the most common case.
+
+
 
 ## A 60-second tour
 
-Here's what `gf` looks like in practice:
+This is what the workflow looks like now:
 
-```
-$ ./gf sync -v
-▶ Incremental compile: 2 file(s)...
-✔ Compiled 2 file(s) (1.4s)
-▶ Hot-swapping classes via JDWP (port 9009)...
-✔ Hot-swapped 2 class(es). (0.9s)
-✔ UI and resource files synced. Refresh your browser.
-✔ Total (3.1s)
-```
+![./gf sync -v output](https://raw.githubusercontent.com/riyadomf/glassfish-hotswap-cli/main/docs/demo-sync-output.png)
 
-That's the entire dev loop. Edit a file. Run `./gf sync`. The change is live in the running server. No restart, no redeploy, no waiting.
+![glassfish-hotswap-cli demo](https://raw.githubusercontent.com/riyadomf/glassfish-hotswap-cli/main/docs/demo.gif)
 
-A few sibling commands round out the workflow:
+That's it.
 
-- `./gf sync` — the main loop: incremental compile + JDWP hot-swap + UI sync. What you run after almost every change.
-- `./gf ui` — rsync XHTML, CSS, JS, and JasperReports templates into the exploded deployment. No compile, no JVM round-trip. Just refresh the browser.
-- `./gf classes -v` — compile + hot-swap only (no UI sync). What you want when you're iterating purely on Java code.
-- `./gf full` — clean Maven build + full `asadmin` redeploy. The escape hatch when you've changed something hot-swap can't handle.
-- `./gf log --err` — tail the GlassFish server log, filtered to errors. Run it in a second pane.
+Edit.
 
-Because it's a plain CLI, it's scriptable. Anything that can drive a terminal can drive a hot-swap — your shell history, a Makefile, a CI hook, or an AI agent like Claude Code asking "redeploy that and tail the log." This is the part the IDE-integrated options couldn't give you, and the part that ended up mattering most once I started letting Claude Code drive the loop end-to-end.
+Save.
 
-The whole thing is a single Bash script plus one Java file you can drop into any Maven + GlassFish 7/8 project. It's been my daily driver for the past several months.
+Run `./gf sync`.
 
-## Why not just buy IntelliJ Ultimate?
+Refresh.
 
-The honest answer is: I tried, and it still wasn't enough.
+The change is live.
 
-**JasperReports templates.** This was the killer. Half the enterprise GlassFish apps I've worked on use JasperReports for PDF generation. The `.jrxml` template files live somewhere on the classpath (typically `src/main/resources/reports/`) and get compiled at runtime by `JasperCompileManager`. IntelliJ's "Update resources" action — the thing that's supposed to push your changes into a running server without redeploying — **only knows about webapp files**: XHTML, CSS, JS, images. It doesn't touch `.jrxml`.
+No restart, no redeploy, no context switch.
 
-So even with Ultimate, my workflow for a report-template change was: edit the `.jrxml`, redeploy (2 minutes), check the PDF. Or copy the file by hand into GlassFish's exploded deployment directory and hope I got the path right.
+Most days, `sync` is the only command I use.
 
-The fix has two halves, and I want to be honest that the second half isn't free.
+If I'm only changing XHTML, CSS, JavaScript, or JasperReports templates, I use `./gf ui`, which skips compilation entirely.
 
-**Half one: the CLI does the file swap.** `./gf ui` runs `rsync` from your source tree (e.g. `src/main/resources/reports/`) into the matching path under GlassFish's exploded deployment (e.g. `WEB-INF/classes/reports/`). The source and destination paths are settings in the script — you adjust them once to match your project's layout and the workflow is set for the lifetime of the project.
+And when I make a structural change that hot-swap can't handle, `./gf full` falls back to a traditional clean build and redeploy.
 
-**Half two: the application reads the file in a way that picks up the swap.** JasperReports normally reads templates through the classloader — `getClass().getResourceAsStream(reportPath)` — which is correct in production but caches the bytes the first time a report is loaded. Your rsync would be invisible until you redeploy. The fix is a small one-time change: detect when the resource is being served from an exploded deployment (the URL protocol is `file:` rather than `jar:`) and read it directly from the filesystem in that case.
+The important part isn't the command itself.
 
-```java
-public JasperReport compileReport(String reportPath) throws JRException {
-    // In exploded deployments (dev), read from filesystem to bypass classloader cache.
-    URL resource = getClass().getResource(reportPath);
-    if (resource != null && "file".equals(resource.getProtocol())) {
-        try (InputStream is = Files.newInputStream(Path.of(resource.toURI()))) {
-            return JasperCompileManager.compileReport(is);
-        } catch (Exception ignored) { /* fall through to classloader path */ }
-    }
-    // Production path: read through the classloader as normal.
-    try (InputStream is = getClass().getResourceAsStream(reportPath)) {
-        if (is == null) throw new JRException("Report not found: " + reportPath);
-        return JasperCompileManager.compileReport(is);
-    }
-}
-```
+It's that the workflow lives in the terminal.
 
-Production (the WAR is read out of a JAR-style classpath) goes through the classloader. Development (exploded deployment, `file:` URLs) goes through the filesystem and picks up the rsynced changes immediately. Same code, two paths, no environment flag, no `if (DEV_MODE)` branch.
+Anything that can run a shell command can trigger a hot-swap.
 
-Cycle drops from 2 minutes to under a second. **This alone saves me hours every week.**
+A Makefile.
 
-**The classloader churn problem.** Every time you redeploy a GlassFish app, the server spins up a new application classloader. The old one — and every class it ever loaded — can't be garbage collected until every reference to it is gone. In long-running development sessions with dozens of redeploys, this is famously how you end up with `OutOfMemoryError: Metaspace` and a domain you have to restart.
+A script.
 
-JDWP hot-swap **reuses the existing classloader**. The class object in memory is updated in place, no new classloader is created, no leak accumulates. On a typical dev day I'll hot-swap forty or fifty times and never touch a redeploy. The domain stays healthy for the full session.
+A remote SSH session.
 
-**No IDE lock-in.** I bounce editors. I want the fast feedback to follow me, not be hostage to whichever editor's window is in focus. `gf` runs from any terminal — VS Code's integrated terminal, a Vim split, a plain SSH session, the Claude Code shell. It doesn't know or care what's editing the source files.
+A CI hook.
 
-**No IntelliJ Ultimate required.** For me, this means I can use IntelliJ Community when I want a refactor and VS Code when I want to type. For teams, it means juniors and contractors on Community licenses get the same fast loop as the seniors on Ultimate. The tool is MIT-licensed, no per-seat cost, no expiring trial.
+An AI coding agent.
+
+That turned out to be the missing piece.
+
+> The JVM already knew how to hot-swap classes.
+>
+> IDEs already knew how to talk to the JVM.
+>
+> What was missing was a simple command-line bridge between the two.
+
+
 
 ## How JDWP hot-swap actually works
 
-JDWP — the Java Debug Wire Protocol — is the JVM's built-in debugger interface. Start a JVM with `-agentlib:jdwp=transport=dt_socket,server=y,address=*:9009` and it opens a socket waiting for debugger commands. That's what IntelliJ talks to when you set a breakpoint.
+The nice thing about this approach is that there's no magic involved.
 
-The interesting thing about JDWP, and the part most people don't think about, is that the protocol supports **redefining a class's bytecode in a running JVM**. You connect, you hand it the new bytes for `com.example.HelloController`, and the JVM atomically replaces the existing class definition. Existing instances keep their identity and field values. Method bodies match by signature and get the new implementation immediately.
+Everything relies on functionality already built into the JDK.
 
-The Java side of that conversation is the JDI — the Java Debug Interface — which lives in the `jdk.jdi` module. The core of `gf`'s hot-swap client is about ten lines:
+JDWP, the Java Debug Wire Protocol, is the same protocol your IDE uses when you attach a debugger.
+
+Start GlassFish with:
+
+```bash
+-agentlib:jdwp=transport=dt_socket,server=y,address=*:9009
+```
+
+and the JVM opens a debug port waiting for connections.
+
+Most developers use that port for breakpoints.
+
+But JDWP supports something else that's arguably more interesting: redefining class bytecode inside a running JVM.
+
+The process is surprisingly simple:
+
+1. Connect to the running JVM.
+2. Find the loaded class.
+3. Read the newly compiled bytecode.
+4. Ask the JVM to replace the existing implementation.
+
+No restart required.
+
+No new classloader.
+
+No application bootstrap.
+
+Just new code running inside existing objects.
+
+The core implementation ended up being about ten lines of Java:
 
 ```java
-VirtualMachine vm = connector.attach(arguments);   // talk to the JVM
+VirtualMachine vm = connector.attach(arguments);
 
 for (Path classFile : changedClassFiles) {
     String className = classFile.toClassName();
-    List<ReferenceType> types = vm.classesByName(className);
-    if (types.isEmpty()) continue;                  // class not loaded yet, skip
 
-    byte[] bytecode = Files.readAllBytes(classFile);
-    vm.redefineClasses(Map.of(types.get(0), bytecode));
+    List<ReferenceType> types =
+        vm.classesByName(className);
+
+    if (types.isEmpty()) continue;
+
+    byte[] bytecode =
+        Files.readAllBytes(classFile);
+
+    vm.redefineClasses(
+        Map.of(types.get(0), bytecode)
+    );
 }
 
 vm.dispose();
 ```
 
-The Bash side does the orchestration: figure out which `.java` files changed since the last successful build (a `find` against a marker file), run `javac` on just those (with the Lombok processor auto-detected from the classpath), then hand the resulting `.class` files to the Java JDI client.
+The Bash script handles everything around it:
+
+* Detect changed files
+* Incremental compilation
+* Lombok support
+* Error handling
+* Deployment fallback
+
+JDWP does the actual class replacement.
 
 ## The interesting bit: when hot-swap can't help
 
-JDWP's `redefineClasses` has one limitation. It can change method **bodies**, but it can't change the **shape** of a class. Add a new field, add a new method, change a method signature — the JVM rejects the swap with `UnsupportedOperationException: add method not implemented`.
+Of course, there are limits.
 
-(There's a JVM flag, `-XX:+AllowRedefinitionToAddDeleteMethods`, that loosens this. It's still not enough for arbitrary refactors, and has compatibility gotchas with annotation processors and synthetic methods. I decided not to rely on it.)
+Standard JDWP hot-swap can replace method bodies, but it can't change the structure of a class.
 
-So `gf` needs a decision tree: try the hot-swap, fall back to a full redeploy if it fails. But there are actually four cases:
+Add a new field.
 
-1. **Hot-swap works** → 3–6 second happy path. Done.
-2. **Hot-swap fails with "structural change"** → fall back to `mvn clean package` + `asadmin redeploy`. Slow (~45–120s) but correct.
-3. **Can't connect to the JDWP port at all** → either GlassFish isn't in debug mode, or an IDE debugger is already attached holding the port. These need different responses.
-4. **JVM doesn't support `canRedefineClasses`** → something's wrong with the debug-options config. Print a diagnostic and bail.
+Add a new method.
 
-Distinguishing case 2 from case 3 turned out to matter a lot. If I always fell back to a full redeploy when JDWP failed, then attaching IntelliJ's debugger — which holds the port — would trigger an unwanted 2-minute redeploy every time I ran `gf sync`. That defeats the entire point.
+Change a method signature.
 
-The fix was simple but only obvious in hindsight: use different exit codes from the Java client. `exit 1` for structural change, `exit 2` for connection failure. The Bash script reads the exit code and branches:
+The JVM rejects the update.
+
+You'll typically see something along the lines of:
+
+```text
+UnsupportedOperationException: add method not implemented
+```
+
+At that point a full redeploy is unavoidable.
+
+The obvious solution would be:
+
+1. Try hot-swap.
+2. If it fails, redeploy.
+
+But reality turned out to be a little messier.
+
+There are actually four different situations:
+
+### 1. Hot-swap succeeds
+
+The happy path.
+
+Compile.
+
+Swap.
+
+Refresh.
+
+Done in a few seconds.
+
+### 2. Structural change detected
+
+The JVM rejects the class redefinition.
+
+`gf` falls back to:
 
 ```bash
-java -cp tools HotSwap "$DEBUG_PORT" target/classes "$SINCE" $VERBOSE_FLAG
+./gf full
+```
+
+which performs a normal Maven build and GlassFish redeploy.
+
+Slower, but correct.
+
+### 3. JDWP connection unavailable
+
+This turned out to be more subtle than I expected.
+
+Sometimes the JVM isn't reachable because GlassFish wasn't started in debug mode.
+
+Other times IntelliJ is already attached to the debug port.
+
+Those situations look similar from the outside, but they should lead to very different outcomes.
+
+A missing debug configuration is a setup issue.
+
+An attached IDE debugger means hot-swap is already available elsewhere.
+
+The tool needed to distinguish between them.
+
+The solution ended up being simple: different exit codes.
+
+```bash
+java -cp tools HotSwap "$DEBUG_PORT" target/classes "$SINCE"
+
 case $? in
-    0) ;;  # success
-    1) full_redeploy ;;                                          # structural change
-    2) warn "IDE debugger attached — use IDE hot-swap instead" ;; # port held
+    0) ;;
+    1) full_redeploy ;;
+    2) warn "Debugger already attached or JDWP unavailable" ;;
 esac
 ```
 
-Tiny detail. Huge quality-of-life difference.
+A tiny implementation detail.
 
-## The things IntelliJ won't do (and why I needed them)
+But it prevented unnecessary redeploys and made the workflow feel much smarter.
 
-Beyond hot-swap itself, there were three more friction points the tool ended up smoothing over. They sound small individually; together they're the difference between "neat experiment" and "I run this all day."
+### 4. JVM configuration issue
 
-**Auto-create JNDI resources on deploy.** Every time someone on the team added a new config key to `env.properties`, you had to remember to create a matching JNDI custom resource in GlassFish, or the next deploy would fail with `NamingException` mid-startup. `./gf deploy` and `./gf full` now read `env.properties` and create any missing resources before pushing the WAR. Adding a config value is just adding a line; nobody needs to remember the `asadmin create-custom-resource` incantation.
+Occasionally you'll encounter a JVM that reports:
 
-**Self-healing `domain.xml` debug-options.** GlassFish's `domain.xml` occasionally ends up with the wrong JDWP flags (`server=n` instead of `y`, or `suspend=y` instead of `n`) after certain admin operations. The result is a domain that starts but doesn't accept debugger connections — which silently breaks hot-swap until you go spelunking through the XML. `./gf start` now detects the broken pattern and rewrites it before launch.
+```java
+vm.canRedefineClasses() == false
+```
 
-**Useful error messages when `asadmin` can't authenticate.** If you haven't run `asadmin login`, the first command that touches the admin endpoint dies with `Authentication failed for user: null` and the script exits half-way through whatever you were doing. The latest version probes auth up front and prints the two recovery commands (`asadmin login` and `asadmin change-admin-password`) explicitly.
+That's usually a configuration problem.
 
-## A note on the Claude Code integration
+The tool prints diagnostics and exits instead of guessing.
 
-The repo ships with a [Claude Code](https://www.anthropic.com/news/claude-code) skill in `.claude/skills/gf/`. If you use Claude Code as part of your workflow, the `/gf` slash command lets Claude run any `gf` subcommand directly — `/gf sync -v`, `/gf log --err`, `/gf full`. With no arguments, Claude gets a quick reference of the whole CLI.
 
-This wasn't a planned feature; I added it because I kept asking Claude "can you redeploy that and tail the log" and realized the skill should just *be* the workflow rather than me re-explaining it every session.
+
+## The JasperReports problem
+
+Hot-swapping Java classes solved most of my feedback loop.
+
+Then I hit JasperReports.
+
+If you've worked on enterprise applications, you've probably seen it.
+
+A report template changes.
+
+Maybe a column moves.
+
+Maybe a calculation changes.
+
+Maybe the customer wants a different logo.
+
+The template lives in a `.jrxml` file somewhere under:
+
+```text
+src/main/resources/reports/
+```
+
+You make the change.
+
+Generate the PDF.
+
+Nothing happens.
+
+The old report is still there.
+
+
+
+At first I assumed IntelliJ's resource update feature would handle it.
+
+It doesn't.
+
+The GlassFish integration understands web resources such as:
+
+* XHTML
+* CSS
+* JavaScript
+* Images
+
+But it doesn't know anything about `.jrxml` templates.
+
+So every report change meant one of two things:
+
+* wait for a full redeploy
+* manually copy files into GlassFish's exploded deployment directory
+
+Neither option was particularly appealing.
+
+
+
+The first half of the solution was straightforward.
+
+`gf ui` uses `rsync` to copy report templates directly into the exploded deployment:
+
+```text
+src/main/resources/reports/
+            ↓
+WEB-INF/classes/reports/
+```
+
+Now the updated file exists on disk.
+
+Problem solved?
+
+Not quite.
+
+
+
+The second half was hiding inside the application itself.
+
+Most JasperReports integrations load templates through the classloader:
+
+```java
+getClass().getResourceAsStream(reportPath)
+```
+
+That's the correct production implementation.
+
+The problem is that classloaders cache resources.
+
+The first version of the report gets loaded and stays loaded.
+
+Your freshly copied file never gets used.
+
+
+
+The workaround ended up being surprisingly clean.
+
+When running from an exploded deployment, resources are served using a `file:` URL.
+
+When running from a packaged WAR, they're served from the classpath.
+
+That means we can detect the environment automatically.
+
+Development uses the filesystem.
+
+Production uses the classloader.
+
+No feature flags.
+
+No environment variables.
+
+No special configuration.
+
+Just:
+
+```java
+URL resource = getClass().getResource(reportPath);
+
+if (resource != null &&
+    "file".equals(resource.getProtocol())) {
+
+    try (InputStream is =
+             Files.newInputStream(
+                 Path.of(resource.toURI()))) {
+
+        return JasperCompileManager.compileReport(is);
+    }
+}
+```
+
+One small change.
+
+The feedback loop for report development dropped from minutes to seconds.
+
+> Honestly, this feature alone probably saves me more time than the Java hot-swap itself.
+
+
+
+## Why not just use IntelliJ Ultimate?
+
+A fair question.
+
+I already owned a license.
+
+I used it.
+
+And I still built this.
+
+The reason is simple:
+
+> The problem wasn't hot-swap. The problem was workflow.
+
+I wanted the feedback loop to exist independently of any specific IDE.
+
+Some days I'm using IntelliJ.
+
+Some days VS Code.
+
+Sometimes I'm SSH'd into a development box.
+
+Sometimes Claude Code is driving the changes while I'm reviewing logs.
+
+The workflow should stay the same regardless of which editor happens to be open.
+
+A terminal command gives you that portability.
+
+An IDE plugin doesn't.
+
+
+
+There's another advantage that only became obvious after months of use.
+
+Every redeploy creates a new application classloader.
+
+In large applications, repeated redeploys can gradually accumulate classloader leaks and metaspace growth.
+
+Eventually somebody restarts the domain.
+
+JDWP hot-swap doesn't create a new classloader.
+
+The existing one stays alive.
+
+The class definition changes in place.
+
+I can go an entire day with dozens of code changes and never restart GlassFish.
+
+The domain simply stays healthier.
+
+
+
+## A few quality-of-life improvements
+
+Once the core workflow existed, a handful of smaller annoyances became impossible to ignore.
+
+### Automatic JNDI resource creation
+
+New configuration keys often required matching GlassFish resources.
+
+Forgetting one usually meant discovering the problem during deployment.
+
+`gf` now creates missing resources automatically during deployment.
+
+The configuration file remains the source of truth.
+
+### Self-healing debug configuration
+
+Occasionally GlassFish would start with incorrect JDWP settings.
+
+The server looked healthy.
+
+The application worked.
+
+Hot-swap quietly stopped working.
+
+The script now checks and fixes common debug configuration issues before startup.
+
+### Better authentication errors
+
+If you've ever seen:
+
+```text
+Authentication failed for user: null
+```
+
+you know how unhelpful that message is.
+
+The newer versions detect the problem early and print the exact recovery commands needed.
+
+Small details.
+
+But those details determine whether a tool feels pleasant or frustrating after hundreds of uses.
+
+
+
+## Claude Code integration
+
+One unexpected benefit of building a CLI was that AI tooling immediately understood it.
+
+The repository includes a Claude Code skill that exposes the workflow through a `/gf` command.
+
+That means prompts like:
+
+> redeploy the application and watch the logs
+
+become actual commands instead of conversational instructions.
+
+```text
+/gf sync -v
+/gf full
+/gf log --err
+```
+
+I didn't originally plan this feature.
+
+Once the workflow was expressed as commands rather than IDE actions, turning it into an agent skill felt like a natural next step.
+
+With the rise of agentic software engineering, tools that expose clear command-line interfaces are much easier for AI systems to understand and use reliably.
+
+> Good command-line interfaces compose well with everything: humans, scripts, CI systems, and now AI agents.
+
+
 
 ## What I learned
 
-**Bash robustness is mostly about defaults.** `set -euo pipefail` at the top of every script catches an absurd number of bugs that would otherwise silently swallow errors. `rsync` errors in particular love to slip past `set -e` because they exit non-zero on the most boring conditions (e.g. an optional directory not existing). I ended up wrapping `rsync` calls with explicit error-to-warning handling instead of letting them kill the script.
+A few lessons kept showing up throughout this project.
 
-**Idempotency is worth the effort.** The companion `setup-glassfish-resources.sh` script creates JDBC pools, JMS queues, and JNDI resources from a properties file. The first version was a 100-line wall of `asadmin create-*` commands. If you ran it twice you got "resource already exists" errors and the script aborted half-way through, leaving GlassFish in an inconsistent state. Rewriting it to check-then-create was annoying but it's the difference between a tool people actually use and a tool they're afraid of.
+### Good defaults beat configuration
 
-**Auto-detection beats configuration.** I started with environment variables for everything: Java version, Maven wrapper path, Lombok presence, GlassFish domain name. Then I realized every single one is derivable from the project itself. The `pom.xml` tells you the Java version. The presence of `mvnw` tells you which Maven to use. A Lombok dependency on the classpath tells you whether to enable annotation processing. By the end the only required setup was "put GlassFish on your PATH." Everything else just works.
+My first versions exposed everything as settings.
 
-**Exit codes carry information.** The distinction between "hot-swap failed because the change is too big" and "hot-swap failed because we can't even connect" is invisible from a thrown exception in the parent script, but trivial from an exit code. The fact that I shipped the first version with a single exit code for both was the biggest single source of confused-user friction. Don't lump categorically different failures into one signal.
+Java version.
+
+Maven path.
+
+Lombok configuration.
+
+Domain name.
+
+Eventually I realized almost all of it could be detected automatically.
+
+The fewer things users need to configure, the more likely they are to actually use the tool.
+
+### Idempotency matters
+
+The original setup scripts worked exactly once.
+
+Running them twice produced a wall of "already exists" errors.
+
+Nobody likes tools they're afraid to run.
+
+Making setup repeatable turned out to be one of the highest-leverage improvements.
+
+### Exit codes are part of your API
+
+At first every failure looked the same.
+
+That was a mistake.
+
+A structural hot-swap failure and a connection failure are fundamentally different events.
+
+Once the tool started communicating that distinction clearly, a surprising amount of user confusion disappeared.
+
+### Small delays matter more than we think
+
+Nobody complains about a two-minute redeploy.
+
+Not really.
+
+You get used to it.
+
+You check Slack.
+
+You open another tab.
+
+You wait.
+
+> The cost isn't the two minutes. The cost is losing focus forty times a day.
+>
+> That's what I wanted back.
+
+
+
+## Who this is for
+
+`gf` isn't trying to replace JRebel.
+
+It's not trying to replace IntelliJ.
+
+And it's definitely not trying to solve every hot-reload problem in Java.
+
+It's for a very specific group of developers:
+
+* You run GlassFish 7 or 8.
+* You work on a Jakarta EE application.
+* Your redeploy cycle is slowing you down.
+* You prefer command-line workflows.
+* You want something that works with any editor.
+
+If that sounds familiar, you might find it useful.
+
+
 
 ## Try it
 
-If you work on Jakarta EE apps with GlassFish 7 or 8, give `gf` a try:
+Getting started takes about a minute:
 
 ```bash
-# Drop into any Maven + GlassFish project root:
 curl -fsSL https://raw.githubusercontent.com/riyadomf/glassfish-hotswap-cli/main/gf -o gf
+
 mkdir -p tools
-curl -fsSL https://raw.githubusercontent.com/riyadomf/glassfish-hotswap-cli/main/tools/HotSwap.java -o tools/HotSwap.java
+
+curl -fsSL \
+https://raw.githubusercontent.com/riyadomf/glassfish-hotswap-cli/main/tools/HotSwap.java \
+-o tools/HotSwap.java
+
 chmod +x gf
+
 ./gf run
 ```
 
-The full README walks through the rest of the setup. The tool is MIT-licensed, runs on Linux and macOS, supports JDK 17 / 21 / 25, and works out of the box on any Maven + GlassFish 7 or 8 project.
+After that:
 
-If you find it useful, a ⭐ on the repo means a lot — it helps the project show up for the next person looking for the same thing.
+```bash
+./gf sync -v
+```
 
-If something doesn't work, open an issue. I'm watching.
+becomes your new development loop.
 
-🔗 [github.com/riyadomf/glassfish-hotswap-cli](https://github.com/riyadomf/glassfish-hotswap-cli)
+The project is MIT licensed, works on Linux and macOS, supports JDK 17, 21, and 25, and has been my daily driver for the past several months.
+
+The JVM has supported class redefinition for years.
+
+Most developers simply interact with it through an IDE.
+
+I wanted the same capability from a terminal.
+
+That's all this project really is: a thin layer between a running JVM and a developer who wants feedback in seconds instead of minutes.
+
+If that sounds useful, give it a try.
+
+And if you find a bug, open an issue. I'd love to hear about your workflow and how you're using it.
+
+**GitHub:** [glassfish-hotswap-cli](https://github.com/riyadomf/glassfish-hotswap-cli)
