@@ -425,7 +425,8 @@ The first half of the solution was straightforward.
 
 ```text
 src/main/resources/reports/
-            ↓
+            |
+            v
 WEB-INF/classes/reports/
 ```
 
