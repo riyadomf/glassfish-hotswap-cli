@@ -57,7 +57,7 @@ It's mostly Bash. About 200 lines of Java. And it reduced my feedback loop from 
 
 Five seconds is the number I use in my head now.
 
-
+![glassfish-hotswap-cli demo](https://raw.githubusercontent.com/riyadomf/glassfish-hotswap-cli/main/docs/demo.gif)
 
 ## What I tried first
 
@@ -122,8 +122,6 @@ I was looking for the fastest path through the most common case.
 This is what the workflow looks like now:
 
 ![./gf sync -v output](https://raw.githubusercontent.com/riyadomf/glassfish-hotswap-cli/main/docs/demo-sync-output.png)
-
-![glassfish-hotswap-cli demo](https://raw.githubusercontent.com/riyadomf/glassfish-hotswap-cli/main/docs/demo.gif)
 
 That's it.
 
