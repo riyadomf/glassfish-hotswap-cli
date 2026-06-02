@@ -2,8 +2,6 @@
 
 *Repo: [glassfish-hotswap-cli](https://github.com/riyadomf/glassfish-hotswap-cli)*
 
-{% embed https://github.com/riyadomf/glassfish-hotswap-cli %}
-
 ## The 2-minute cliff
 
 If you've worked on a Jakarta EE application running on GlassFish, you probably know this routine.
@@ -689,6 +687,8 @@ It's for a very specific group of developers:
 
 If that sounds familiar, you might find it useful.
 
+
+{% embed https://github.com/riyadomf/glassfish-hotswap-cli %}
 
 
 ## Try it
