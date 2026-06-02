@@ -7,7 +7,7 @@
 # resources (uncomment the JMS section below if needed).
 #
 # Run once per GlassFish server (or with --delete to recreate after
-# config changes). Idempotent — safe to run multiple times.
+# config changes). Idempotent, safe to run multiple times.
 #
 # Usage:
 #   ./setup-glassfish-resources.sh <db.properties> <env.properties>
@@ -25,6 +25,11 @@
 # IMPORTANT: Both properties files contain secrets (DB password, API keys).
 # Secure them before running this script:
 #   chmod 600 db.properties env.properties
+#
+# Prerequisite: asadmin must be authenticated against the running domain.
+# If you see "Authentication failed for user: null", run one of:
+#   asadmin login                  # interactive login (saves to ~/.gfclient/pass)
+#   asadmin change-admin-password  # set or change the admin password
 # =============================================================================
 
 set -euo pipefail
@@ -91,6 +96,26 @@ resource_exists() {
 
 check_permissions "$PROPS_FILE"
 check_permissions "$ENV_FILE"
+
+# --- Verify asadmin can reach the running domain ---
+# Fails fast with actionable guidance instead of letting the first asadmin
+# command later crash with a swallowed authentication error.
+ensure_asadmin_ready() {
+    local out
+    if out=$($ASADMIN list-jdbc-resources 2>&1); then
+        return 0
+    fi
+    echo "Error: asadmin cannot reach the GlassFish admin endpoint." >&2
+    printf '%s\n' "$out" >&2
+    echo "" >&2
+    echo "  This usually means admin authentication is required and no credentials are configured." >&2
+    echo "  Resolve it with one of:" >&2
+    echo "    asadmin login                  # interactive login, saves to ~/.gfclient/pass" >&2
+    echo "    asadmin change-admin-password  # set or change the admin password" >&2
+    exit 1
+}
+
+ensure_asadmin_ready
 
 DB_HOST=$(get_prop "db.host")
 DB_PORT=$(get_prop "db.port")
@@ -233,7 +258,7 @@ done < "$ENV_FILE"
 echo ""
 echo "=== Configuring JVM heap dump on OOM ==="
 
-# Remove existing options first (idempotent — ignore errors if not present)
+# Remove existing options first (idempotent, ignore errors if not present)
 $ASADMIN delete-jvm-options -- "-XX\:+HeapDumpOnOutOfMemoryError" 2>/dev/null || true
 $ASADMIN delete-jvm-options -- "-XX\:HeapDumpPath=/tmp/glassfish-heapdump.hprof" 2>/dev/null || true
 

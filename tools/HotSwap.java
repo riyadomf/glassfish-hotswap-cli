@@ -7,7 +7,7 @@ import java.nio.file.*;
 import java.util.*;
 
 /**
- * JDWP HotSwap utility — connects to a running JVM debug port and redefines
+ * JDWP HotSwap utility, connects to a running JVM debug port and redefines
  * changed .class files, exactly like IntelliJ's "Update classes and resources".
  *
  * Usage: java HotSwap <port> <classesDir> [sinceMillis] [-v]

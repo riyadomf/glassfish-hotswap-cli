@@ -14,3 +14,6 @@ env.properties
 
 # macOS
 .DS_Store
+
+# Claude Code local settings (skill definitions in .claude/skills/ ARE tracked)
+.claude/settings.local.json
