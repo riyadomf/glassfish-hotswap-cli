@@ -1,5 +1,3 @@
-# How I Used JDWP Class Redefinition to Cut GlassFish Redeploys from 2 Minutes to 5 Seconds
-
 *Building a command-line hot-swap workflow for GlassFish using JVM debugging internals: no IntelliJ Ultimate, no JRebel, no custom JVM.*
 
 *Repo: [glassfish-hotswap-cli](https://github.com/riyadomf/glassfish-hotswap-cli)*
